@@ -1,0 +1,20 @@
+# Dépendances Wally : reconstruites par `wally install`, jamais commitées.
+/Packages/*
+!/Packages/.gitkeep
+/ServerPackages/*
+!/ServerPackages/.gitkeep
+
+# Artefacts de build et places locales.
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+/sourcemap.json
+
+# Std selene généré depuis le dump d'API Roblox (dépend de la version du client).
+/roblox.toml
+
+# Binaires d'outillage téléchargés localement.
+/.tools/
+
+.DS_Store

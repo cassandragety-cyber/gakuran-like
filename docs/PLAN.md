@@ -1,8 +1,21 @@
 # PLAN — Architecture technique
 
-> Nom de travail : `<NOM_DU_JEU>` (à figer — voir questions bloquantes).
+> **Banchou** (番長) — délai cible : **12 semaines**, les 8 phases.
 > Document vivant : mis à jour à chaque fin de phase. Toute divergence entre ce
 > fichier et le code est un bug de documentation à corriger immédiatement.
+
+## Priorité en cas de dérapage — à ne jamais réinterpréter
+
+Si le planning glisse, **on coupe dans l'ordre suivant** :
+
+1. **Phase 5 (social)** — gangs, activités, emotes. Première à sauter.
+2. Phase 6 — on livre moins de 15 styles plutôt que des styles bâclés.
+3. Phase 4 — on réduit à 2 métiers au lieu de 4.
+
+**La Phase 1 (combat) n'est jamais réduite, jamais accélérée, jamais reportée.**
+C'est le produit ; tout le reste est du contexte autour. Cette règle survit aux
+changements de session et de contexte : quiconque reprend ce projet doit la lire
+avant de proposer un arbitrage de planning.
 
 ---
 
@@ -30,7 +43,7 @@
 .
 ├── default.project.json          # mapping Rojo 7
 ├── wally.toml / wally.lock
-├── selene.toml / .stylua.toml / roblox.yml (std selene généré)
+├── selene.toml / .stylua.toml / rokit.toml / roblox.toml (généré)
 ├── docs/
 │   ├── PLAN.md  DECISIONS.md  THREAT_MODEL.md  TESTING.md  RELEASE_CHECKLIST.md
 └── src/
@@ -38,7 +51,7 @@
     │   ├── Shared/               # pur, testable, zéro état global
     │   ├── Config/               # data only
     │   ├── Net/                  # déclaration + runtime des remotes
-    │   └── Packages/             # wally (git-ignored)
+    │   └── Packages/             # monté depuis /Packages (wally, git-ignored)
     ├── ServerScriptService/
     │   ├── init.server.luau
     │   ├── Services/             # stateful, connaissent l'API Roblox
@@ -63,12 +76,12 @@
 | `Loader.luau` | Chargeur générique ~80 lignes : découvre les modules d'un dossier, résout les dépendances déclarées, appelle `Init` puis `Start` en ordre topologique. Utilisé par le serveur (Services) **et** le client (Controllers). |
 | `Trove.luau` (wally) | Nettoyage déterministe. Réexporté via `Shared/Cleanup.luau` pour figer l'API utilisée. |
 | `Signal.luau` (wally) | Événements internes typés côté serveur/client. Jamais utilisé pour traverser le réseau. |
-| `MathUtil.luau` | `lerp`, `clamp`, `approach`, `diminishing(value, k)` — courbe unique de rendements décroissants réutilisée par la progression. |
-| `TableUtil.luau` | `deepFreeze`, `deepCopy`, `mergeInto`, `count`. Utilisé pour geler `Config/` au boot. |
+| `MathUtil.luau` | *(Phase 1)* `lerp`, `clamp`, `approach`, `diminishing(value, k)` — courbe unique de rendements décroissants réutilisée par la progression. |
+| `TableUtil.luau` | `deepFreeze` : gèle `Config/` à l'import. On n'y ajoute une fonction que le jour où un module s'en sert. |
 | `RingBuffer.luau` | Buffer circulaire à taille fixe, générique. Support de l'historique de positions (lag comp) et du profiler. |
 | `TokenBucket.luau` | Rate limiter pur (capacité, refill/s, `tryConsume(now, n)`). Aucune dépendance Roblox → testable. |
 | `Clock.luau` | Temps de référence unique (`workspace:GetServerTimeNow()`), même API sur client et serveur. **Toute logique temporelle de combat passe par ici.** |
-| `Profiler.luau` | Micro-profiler maison : `Profiler.scope("hitbox")`, agrège min/moy/p95/max sur fenêtre glissante, dump via commande admin. Coût nul quand désactivé. |
+| `Profiler.luau` | Micro-profiler maison : `Profiler.record("hitbox", secondes)`, agrège min/moy/p95/max sur une fenêtre glissante de 240 échantillons. Sans closure ni allocation par appel, pour rester utilisable dans une boucle de combat ; coût d'un test booléen quand désactivé. |
 | `Result.luau` | `Ok(v)` / `Err(code, detail)` — type de retour de toutes les validations serveur, pour ne jamais confondre « refusé » et « erreur ». |
 | `Log.luau` | Logging à niveaux avec préfixe de module, silencieux en prod sauf `warn`/`error`. |
 
@@ -79,7 +92,9 @@
 | `Balance.luau` | Constantes de combat globales : fenêtre de combo, fenêtre de parry, durées de stun, poise, hitstop, régen d'endurance, seuils de garde. |
 | `Progression.luau` | Courbe d'XP, gains de stats par entraînement, coefficients de rendements décroissants, plafonds. |
 | `Economy.luau` | Prix, paies des jobs, plafonds/cooldowns de virement, coût de reroll en Yen. |
-| `Monetization.luau` | Table des gamepasses et dev products (id, nom, effet déclaratif). |
+| `Animations.luau` | Clé d'animation → `{ id, priorité, boucle, durée cible }`. `id = 0` déclenche le fallback procédural. Voir `docs/ANIMATIONS.md`. |
+| `DataStores.luau` | Noms de DataStore/MemoryStore, versionnés (`Banchou_<Nom>_v<N>`), et version du schéma de profil. |
+| `Monetization.luau` | Table des gamepasses et dev products (id, nom, prix suggéré, effet déclaratif). |
 | `RateLimits.luau` | Un bucket (capacité, refill) par remote, indexé par le même id que `Net/Definitions`. |
 | `Styles/init.luau` | Agrège et gèle tous les styles ; valide le schéma au boot (crash explicite si un style est malformé). |
 | `Styles/Rarity.luau` | Table de raretés (poids 60/25/10/4/1) + configuration du pity. |
@@ -92,8 +107,8 @@
 
 | Module | Responsabilité |
 |---|---|
-| `Definitions.luau` | **Le contrat réseau.** Pour chaque remote : id, direction, type du payload, validateur de forme, bucket de rate-limit, et si l'appel est autorisé hors combat. |
-| `init.luau` | Runtime : crée les `RemoteEvent`/`RemoteFunction` d'après `Definitions`, expose une API typée (`Net.Server.CombatHit:OnRequest(fn)`, `Net.Client.CombatHit:Fire(payload)`), applique la chaîne middleware **rate-limit → validation de forme → handler**. Un payload invalide n'atteint jamais un service. |
+| `Definitions.luau` | **Le contrat réseau.** Pour chaque remote : id, direction, bucket de rate-limit, et un `parse` typé qui **reconstruit** le payload au lieu de le laisser passer. |
+| `init.luau` | Runtime : crée les `RemoteEvent` d'après `Definitions`, expose une API typée (`Net.Server.on(def, handler)`, `Net.Client.fire(def, payload)`), applique la chaîne middleware **rate-limit → parsing strict → handler**. Un payload invalide n'atteint jamais un service. Pas de `RemoteFunction` : un appel client→serveur qui yield est une attente que le client contrôle. |
 | `Middleware.luau` | Les middlewares eux-mêmes (bucket, shape check, journalisation d'abus, kick soft). |
 
 Remotes prévus (liste figée en Phase 0, complétée par phase — chaque ajout
@@ -107,6 +122,7 @@ implique une entrée dans `THREAT_MODEL.md`) :
 
 | Module | Responsabilité |
 |---|---|
+| `ConfigValidator/` | Invariants de `Config/` vérifiés au boot, échec = refus de démarrer. `Check` (primitives), `CombatRules` (équilibrage + contrat durées d'animation ↔ frame data), `ContentRules` (raretés, cadences, conventions de clés, règles produit de la monétisation). |
 | `ComboMachine.luau` | Machine à états du chain M1 : index de coup, fenêtre de combo, reset, éligibilité du coup suivant. |
 | `CombatResolver.luau` | Applique un `SkillSpec` résolu à une cible : ordre block → parry → i-frames → dégâts → poise → statuts. Retourne une liste d'effets, n'écrit rien. |
 | `HitValidator.luau` | Décide si un hit rapporté est plausible : distance, angle, cohérence d'état, fraîcheur du timestamp, cooldown. Retourne `Result`. |
@@ -120,6 +136,8 @@ implique une entrée dans `THREAT_MODEL.md`) :
 
 | Service | Responsabilité | Dépend de |
 |---|---|---|
+| `SessionService` | Ouverture/fermeture de session joueur, et point d'abonnement unique pour les autres services — évite que chacun connecte son propre `PlayerRemoving` avec un ordre de nettoyage implicite. | — |
+| `DiagnosticsService` | Mesure du délai aller par joueur (base du dimensionnement du rembobinage) et exposition du profiler. | SessionService |
 | `DataService` | ProfileStore : session lock, chargement, migration, autosave, `BindToClose`, kick propre si échec. **Aucun autre service ne touche au datastore.** | — |
 | `CharacterService` | Cycle de vie du personnage : spawn, humanoïde, `Animator`, application des statMods, ragdoll. | DataService |
 | `StateService` | État de combat autoritatif par joueur (HP, endurance, poise, i-frames, état d'anim) + historique de positions (`RingBuffer`) pour la lag comp. | CharacterService |
@@ -138,6 +156,7 @@ implique une entrée dans `THREAT_MODEL.md`) :
 
 | Controller | Responsabilité |
 |---|---|
+| `DiagnosticsController` | Mesure du RTT et de la dérive d'horloge à la connexion, puis à la demande. |
 | `InputController` | Abstraction clavier/gamepad/tactile → actions nommées (`Attack`, `Block`, `Dash`, `Skill1..4`). Seul endroit qui connaît `UserInputService`. |
 | `CombatController` | Prédiction locale : joue l'anim, détecte le hit (`GetPartBoundsInBox` + `OverlapParams`), envoie la demande, réconcilie avec la réponse serveur. |
 | `HitboxDebugController` | Visualisation des hitbox + branchement du `Profiler` (activable en Studio uniquement). |
@@ -169,7 +188,7 @@ Services ────────┘            ▲
 
 Règles vérifiées par revue (et à terme par un test de lint) :
 - `Shared` ne dépend de rien du projet.
-- `Config` ne dépend que de `Shared/Types`.
+- `Config` ne dépend que de `Shared/Types` et `Shared/TableUtil` (pour se geler).
 - `Systems` ne dépend que de `Shared` + `Config`. **Aucun `game:GetService`.**
 - `Services` peut dépendre de tout, mais jamais d'un `Controller`.
 - Aucune dépendance circulaire entre services : le `Loader` échoue au boot si le
@@ -254,7 +273,7 @@ réseau) parry de façon fiable, zéro hit fantôme sur 100 échanges.
 | Coût hitbox | < 0.15 ms par ouverture de hitbox | scope `Profiler.scope("hitbox")` (exigence §6 du brief) |
 | Remotes | < 25 paquets/s/joueur en combat | compteur dans `Net/Middleware` |
 | Mémoire | plateau stable après 30 min, ± 5 % | Developer Console, `Trove` obligatoire |
-| Boucles | 0 occurrence de `while true do wait()` | règle Selene custom |
+| Boucles | 0 occurrence de `while true do wait()` | `scripts/check.sh` — Selene ne sait pas exprimer cette règle, c'est un contrôle dédié |
 
 ---
 
@@ -262,7 +281,7 @@ réseau) parry de façon fiable, zéro hit fantôme sur 100 échanges.
 
 | Phase | Livrable jouable | Sortie |
 |---|---|---|
-| 0 | Rojo sync, Loader, Net typé, lint/format, README | log `[Boot] OK` serveur + client |
+| 0 ✅ | Rojo sync, Loader, Net typé, validation de config, lint/format, README | `[Boot/Server] OK` + `[Boot/Client] OK` (voir docs/TESTING.md) |
 | 1 | M1 chain, block, parry, dash, endurance, dummy d'entraînement | duel testable à 2 clients Studio |
 | 2 | ProfileStore + migrations, roll/reroll, 3 styles + `Debug_Dummy` | données persistantes, gacha jouable |
 | 3 | Map bloc-out, streaming, spawns, salle de sport + mini-jeu de stats | monde parcourable |
@@ -278,4 +297,6 @@ réseau) parry de façon fiable, zéro hit fantôme sur 100 échanges.
 - `docs/DECISIONS.md` — journal des décisions structurantes (append-only).
 - `docs/THREAT_MODEL.md` — un remote = une ligne = une contre-mesure (dès Phase 0).
 - `docs/TESTING.md` — procédure de test dans Studio, par phase.
+- `docs/COMBAT.md` — spécification du combat, dont la réconciliation client/serveur.
+- `docs/ANIMATIONS.md` — brief animateur, dérivé de `Config/Balance` et `Config/Animations`.
 - `docs/RELEASE_CHECKLIST.md` — créé en Phase 7.

@@ -1,0 +1,16 @@
+# `roblox.toml` est généré par `selene generate-roblox-std` (cf. README).
+std = "roblox"
+
+[lints]
+# Le projet interdit les globales implicites : toute valeur partagée passe par
+# un module. Ces deux lints transforment un oubli de `local` en erreur.
+undefined_variable = "deny"
+global_usage = "deny"
+
+# `shadowing` attrape les `local player = player` qui masquent une validation
+# faite plus haut — un classique des failles de remotes.
+shadowing = "warn"
+
+# On tolère les tables mixtes (array + dictionnaire) dans Config/ : les tables
+# de frame data indexées par numéro y côtoient des champs nommés.
+mixed_table = "allow"

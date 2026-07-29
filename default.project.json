@@ -1,0 +1,55 @@
+{
+	"name": "Banchou",
+	"tree": {
+		"$className": "DataModel",
+
+		"ReplicatedStorage": {
+			"Shared": { "$path": "src/ReplicatedStorage/Shared" },
+			"Config": { "$path": "src/ReplicatedStorage/Config" },
+			"Net": { "$path": "src/ReplicatedStorage/Net" },
+			"Packages": { "$path": "Packages" }
+		},
+
+		"ServerScriptService": {
+			"Server": { "$path": "src/ServerScriptService" }
+		},
+
+		"ServerStorage": {
+			"Assets": { "$path": "src/ServerStorage" }
+		},
+
+		"StarterPlayer": {
+			"StarterPlayerScripts": {
+				"Client": { "$path": "src/StarterPlayer/StarterPlayerScripts" }
+			}
+		},
+
+		"Workspace": {
+			"$properties": {
+				"StreamingEnabled": true,
+				"StreamingIntegrityMode": "MinimumRadiusPause",
+				"StreamingTargetRadius": 512,
+				"FilteringEnabled": true
+			}
+		},
+
+		"Players": {
+			"$properties": {
+				"CharacterAutoLoads": true,
+				"RespawnTime": 4
+			}
+		},
+
+		"SoundService": {
+			"$properties": {
+				"RespectFilteringEnabled": true
+			}
+		},
+
+		"TextChatService": {
+			"$properties": {
+				"ChatVersion": "TextChatService"
+			}
+		}
+	}
+}

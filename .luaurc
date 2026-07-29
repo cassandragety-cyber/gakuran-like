@@ -1,0 +1,11 @@
+{
+	"languageMode": "strict",
+	"lintErrors": true,
+	"lint": {
+		"*": true,
+		"LocalUnused": true,
+		"ImportUnused": true,
+		"TableOperations": true,
+		"DeprecatedApi": true
+	}
+}

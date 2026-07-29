@@ -182,11 +182,127 @@ fois ; une perte de progression est définitive.
 
 ---
 
+## ADR-007 — Le nom d'affichage peut changer, les clés de stockage non
+
+**Statut :** accepté (Phase 0) · **Impact :** irréversible après le lancement
+
+**Contexte.** Le jeu s'appelle Banchou aujourd'hui. Un nom d'expérience Roblox
+se change en deux clics et se change souvent — après un test de marché, un
+conflit de marque, un changement de positionnement. Un nom de DataStore, lui, ne
+se change pas : il n'y a pas de « renommer », seulement « repartir de zéro ».
+
+**Décision.** Toutes les clés de stockage vivent dans `Config/DataStores.luau` au
+format `Banchou_<Nom>_v<N>` — préfixe figé, version explicite. La convention est
+**vérifiée au boot** par `Systems/ConfigValidator` : une clé mal formée empêche
+le serveur de démarrer. La version de schéma du profil (`ProfileSchemaVersion`)
+est un champ distinct du suffixe de clé, parce que migrer un schéma à
+l'intérieur d'un même DataStore et changer de DataStore sont deux opérations
+différentes.
+
+**Alternative écartée.** Dériver les noms du nom de l'expérience, ou les écrire
+au fil de l'eau là où on en a besoin.
+
+**Pourquoi.** Les deux mènent au même accident, à des dates différentes : le
+jour où quelqu'un renomme le jeu ou recopie une clé avec une faute de frappe,
+tous les joueurs se réveillent avec un profil vide. Une constante centralisée et
+validée à chaque démarrage rend cet accident impossible plutôt qu'improbable.
+
+---
+
+## ADR-008 — La Phase 0 ne dépend d'aucun paquet Wally
+
+**Statut :** accepté (Phase 0) · **Impact :** faible, temporaire
+
+**Contexte.** `wally.toml` déclare Trove, Signal, Promise et ProfileStore, qui
+entrent en jeu à partir de la Phase 1. Mais le livrable de la Phase 0 est « ça
+se synchronise dans Studio et ça log OK », et cette promesse ne doit dépendre ni
+du réseau, ni de la résolution du registre Wally.
+
+**Décision.** Aucun module de la Phase 0 ne fait de `require` dans `Packages/`.
+Le dossier existe (vide, avec un `.gitkeep`) pour que le mapping Rojo soit
+valide. Les deux seules connexions du code Phase 0 — `PlayerAdded` /
+`PlayerRemoving` dans `SessionService`, `Heartbeat` dans
+`DiagnosticsController` — sont gérées explicitement : la première paire vit
+aussi longtemps que le serveur, la seconde se déconnecte elle-même une fois ses
+échantillons collectés.
+
+**Alternative écartée.** Introduire Trove dès maintenant pour respecter à la
+lettre la règle « toute connexion vit dans un Trove ».
+
+**Pourquoi.** La règle du Trove existe pour les connexions dont la durée de vie
+suit celle d'un objet créé dynamiquement (un personnage, une hitbox, un écran
+d'UI). En Phase 0, il n'existe aucun objet de ce type. Ajouter une dépendance
+externe pour envelopper deux connexions au cycle de vie trivial aurait rendu
+`rojo serve` dépendant d'un `wally install` réussi, en échange de zéro sécurité
+réelle. **La règle reprend pleinement ses droits en Phase 1**, dès le premier
+personnage qui apparaît.
+
+---
+
+## ADR-009 — Les animations sont des données, avec un fallback procédural par défaut
+
+**Statut :** accepté (Phase 0) · **Impact :** structurant pour le planning
+
+**Contexte.** Le combat a besoin d'animations pour être lisible, et les
+animations sont produites par un humain sur un calendrier qui n'est pas celui du
+code. Attendre les animations pour développer le combat, ou développer le combat
+en codant des identifiants d'animation en dur, sont deux façons de bloquer.
+
+**Décision.** `Config/Animations.luau` associe une clé (`M1_1`, `ParrySuccess`…)
+à `{ id, priorité, boucle, durée cible }`. `id = 0` signifie « pas encore
+uploadé » : le client joue alors un mouvement procédural de la **même durée**.
+Brancher une vraie animation consiste à remplacer un `0` par un identifiant.
+Surtout, `ConfigValidator` **impose** au boot que chaque `targetDuration`
+corresponde à la somme des phases dans `Balance` — un désaccord fait échouer le
+démarrage.
+
+**Alternative écartée.** Charger les animations depuis un dossier d'instances
+`Animation` dans `ReplicatedStorage`, à la mode Roblox habituelle.
+
+**Pourquoi.** Ce contrat de durée vérifié par la machine est ce qui empêche la
+classe de bugs la plus coûteuse du projet : l'animation qui frappe visuellement
+à un instant différent de celui où le serveur applique les dégâts. C'est
+exactement le « hit fantôme » que le brief interdit, et aucune relecture humaine
+ne l'attrape de façon fiable. Un dossier d'instances ne permet pas ce contrôle,
+puisque la durée n'y est connue qu'après chargement de l'asset.
+
+**Conséquence de planning assumée.** Le combat de la Phase 1 sera jouable et
+testable avec des mouvements procéduraux, donc laid. C'est voulu : on valide la
+sensation et le réseau avant d'investir dans les assets. `docs/ANIMATIONS.md` est
+le brief que reçoit l'animateur, et il est dérivé de `Config/Balance` — les
+deux fichiers se modifient dans le même commit.
+
+---
+
+## ADR-010 — Pity à 150 sur Epic, jamais sur Mythic
+
+**Statut :** accepté (Phase 0, décision produit) · **Impact :** moyen, réversible
+
+**Décision.** `PITY_THRESHOLD = 150`, `PITY_TARGET_RARITY = "Epic"`. Le compteur
+vit dans le profil du joueur et suit le versionnage du schéma. Mettre le seuil à
+`0` désactive le système. `ConfigValidator` **refuse de démarrer** si quelqu'un
+positionne un jour la cible sur `Mythic`.
+
+**Alternative écartée.** Pity sur Mythic, ou pas de pity du tout.
+
+**Pourquoi.** Sans pity, un joueur peut enchaîner 300 tirages sans rien voir de
+notable et s'en aller ; le pity Epic borne cette frustration. Avec un pity
+Mythic, le Mythic devient une question de patience et cesse d'être une histoire
+qu'on raconte à ses amis — c'est précisément cette histoire qui fait revenir les
+joueurs et vendre les rerolls. Le garde-fou est dans le code plutôt que dans un
+document parce que c'est le genre d'arbitrage qu'un futur pic de monétisation
+rendra tentant.
+
+---
+
 ## Décisions différées (à trancher au moment dit, notées ici pour ne pas être oubliées)
 
 | Sujet | Phase | Pourquoi on attend |
 |---|---|---|
 | Ragdoll : `PhysicsService` custom vs contraintes sur R15 | 1 | Dépend du coût mesuré sur mobile avec 20 joueurs |
-| Pity system du gacha : activé ou non, et à quel N | 2 | Dépend de la courbe de rétention visée, à discuter |
 | Territoire de gang (fonctionnalité optionnelle du brief) | 5 | Cross-server MemoryStore : à cadrer une fois les gangs de base jouables |
 | Packing `buffer` des payloads de combat | 7 | Uniquement si le budget paquets est dépassé |
+
+*Tranchées depuis : pity du gacha (ADR-010), production des animations
+(ADR-009), génération de la map depuis `Config/World` (confirmée avec le
+produit, mise en œuvre en Phase 3).*
