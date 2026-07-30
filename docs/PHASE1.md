@@ -81,8 +81,8 @@ Ces trois modules n'ont rien à faire côté client : ils constituent l'autorit�
 
 | Module | Responsabilité | Signature |
 |---|---|---|
-| `Rewind.luau` | Interpole l'historique de positions à un instant passé, borné. | `sampleAt(history, t, maxRewind): Snapshot?` |
-| `HitValidator.luau` | Un coup rapporté est-il plausible ? | `check(claim, balance): Result<true>` — codes : `TooFar`, `BehindAttacker`, `NoLineOfSight`, `StaleTimestamp`, `WrongPhase`, `AlreadyHitThisSwing`, `RewindExceeded` |
+| `Rewind.luau` | Interpole l'historique de positions à un instant passé, borné. | `sampleAt(history, t, now, maxRewind): Result<Snapshot>` |
+| `HitValidator.luau` | Un coup rapporté est-il plausible ? La ligne de vue arrive **en argument** (un raycast n'est pas pur). | `checkTimestamp(clientTime, now, tolerance, maxRewind): Result<true>`<br>`check(claim): Result<true>` — codes : `TooFar`, `BehindAttacker`, `NoLineOfSight`, `StaleTimestamp`, `FutureTimestamp`, `RewindExceeded` |
 | `CombatResolver.luau` | **L'arbitre de la parade.** Décide parade / blocage / coup et produit la liste d'effets. | `resolve(step, defender, now, balance): Outcome` |
 | `TuningGuard.luau` | Un réglage à chaud est-il autorisé et dans les bornes ? | `check(path, value): Result<number>`<br>`resolvePath(balance, path): (table, key)?` |
 
@@ -116,7 +116,7 @@ Aucune autre organisation du code ne permet ça.
 | `CharacterService` | Spawn, `Humanoid`, `Animator`, ragdoll, application des `statMods`. Émet `onCharacterAdded` / `onCharacterRemoving`. | SessionService |
 | `StateService` | **Détient l'état autoritatif** : `CombatState`, endurance, jauge de garde, PV, et l'historique de positions par joueur. Un unique `Heartbeat` fait expirer les états échus. | CharacterService |
 | `CombatService` | Orchestre : reçoit les demandes, appelle `StateMachine` → `Rewind` → `HitValidator` → `CombatResolver`, applique les effets, réplique les verdicts. Ne contient **aucune** valeur numérique. | StateService, TuningService |
-| `DummyService` | Mannequin d'entraînement : spawn, encaissement, remise à zéro, et affichage du dernier verdict reçu au-dessus de sa tête. | StateService, CombatService |
+| `TrainingService` | Terrain provisoire, mannequins, obstacle de test de ligne de vue, panneaux d'information, remise à zéro autonome. Un mannequin est un combattant du même registre que les joueurs (ADR-014). | StateService |
 | `TuningService` | La copie vivante de l'équilibrage, le remote de réglage, la diffusion aux clients, la réinitialisation. | — |
 
 ### 2.4 Controllers
@@ -126,7 +126,8 @@ Aucune autre organisation du code ne permet ça.
 | `InputController` | Clavier / gamepad / tactile → actions nommées (`Attack`, `Block`, `Dash`, `ToggleDebug`). Seul module qui connaît `UserInputService`. |
 | `CombatController` | Prédiction locale via `Shared/Combat`, détection de contact, envoi des demandes, réconciliation. |
 | `HitboxDetector` | `GetPartBoundsInBox` + `OverlapParams`, filtrage du personnage propre, mesure via `Profiler.record("hitbox", …)`. |
-| `AnimationController` | Joue une entrée de `Config/Animations` ; si `id == 0`, joue le mouvement procédural de même durée. Le reste du code demande `"M1_3"`, jamais un asset id. |
+| `AnimationController` | *(tranche 1.3)* Joue une entrée de `Config/Animations` ; si `id == 0`, joue le mouvement procédural de même durée. Reporté à 1.3 : la lisibilité visuelle devient déterminante avec la garde, dont la pose doit se lire en moins de 0,10 s. En 1.2, le volume de hitbox et les panneaux des mannequins suffisent à vérifier la mécanique. |
+| `HitboxVisualizer` | Rend le volume réellement interrogé, sur l'interrupteur « Afficher les hitbox ». Reçoit la CFrame du détecteur au lieu de la recalculer, pour ne pas déboguer deux calculs. |
 | `FeedbackController` | Hitstop, éclats, sons, et **le retour en deux temps de la parade** (COMBAT.md §5). |
 | `DebugPanelController` | Le panneau F2 (§4). |
 
@@ -260,7 +261,7 @@ Chaque tranche est jouable et testable à sa livraison, avec sa procédure ajout
 | # | Contenu | Critère d'acceptation |
 |---|---|---|
 | **1.1** ✅ | `CharacterService`, `StateService`, `MovementService`, `StateMachine`, `Frames`, `StaminaModel`, `TuningService`, sprint, panneau F2 complet, latence simulée | Livré. Voir `docs/TESTING.md` §1.1. **Le panneau arrive en premier parce que tout le reste se règle avec.** |
-| **1.2** | `Combat.Attack` + `HitReport`, `HitboxDetector`, `Rewind`, `HitValidator`, `DummyService` | La chaîne de 4 coups s'enchaîne dans la fenêtre de 0,55 s ; le mannequin perd les PV de `Balance.Melee` ; un coup à travers un mur ou dans le dos est refusé avec son code d'erreur. |
+| **1.2** ✅ | `Combat.Attack` + `HitReport`, `HitboxDetector`, `HitboxVisualizer`, `Rewind`, `HitValidator`, `CombatResolver` (branches `Hit`/`Ignored`), `TrainingService`, prédiction locale et écart de prédiction | Livré. Voir `docs/TESTING.md` §1.2. |
 | **1.3** | Garde, jauge, guard break, `CombatResolver` (branches `Blocked` / `Hit`) | 35 % des dégâts en garde ; la jauge se vide, le guard break impose 1,6 s de `Stunned` ; la garde ne s'ouvre pas depuis la récupération d'une attaque. |
 | **1.4** | **Parade** : branche `Parried`, arbitrage horodaté, retour en deux temps, les quatre cas de réconciliation, les interrupteurs de dev | Les quatre cas de COMBAT.md §5 se déclenchent à volonté et **aucun** ne produit d'animation contredite en cours de lecture. Tests exhaustifs de `CombatResolver.resolve` sur la frontière de fenêtre. **Tranche la plus longue de la phase.** |
 | **1.5** | Dash, i-frames, annulation de récupération, coûts d'endurance | Le dash annule une récupération `cancelable` mais jamais un armé ; les i-frames couvrent 0,12 s à partir du départ ; à moins de 10 d'endurance, refus. |

@@ -176,6 +176,16 @@ Détection : le client ouvre la hitbox avec `GetPartBoundsInBox` et
 `OverlapParams`, en filtrant son propre personnage. Il envoie la liste des
 cibles touchées, jamais un montant de dégâts.
 
+La hitbox est ouverte **une seule fois**, à l'instant d'impact prédit, et non à
+chaque frame de la phase active. Le serveur valide le contact à un instant
+précis ; balayer toute la phase produirait des contacts qu'il refuserait pour
+cause de phase, et le joueur verrait des coups disparaître sans raison lisible.
+
+Le serveur, lui, recalcule la phase **à l'instant revendiqué** depuis la trace du
+coup (`lastSwing`), et non depuis l'état courant de l'attaquant : à 150 ms de
+latence, celui-ci est déjà passé en récupération quand le rapport arrive
+(ADR-015).
+
 ---
 
 ## 3. Garde et guard break

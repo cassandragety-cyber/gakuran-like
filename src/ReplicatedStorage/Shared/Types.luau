@@ -141,6 +141,54 @@ export type SprintIntent = {
 }
 
 --[[
+	Intention d'attaquer. Ne contient PAS l'index de chaîne : le serveur le dérive
+	de l'état qu'il détient, sans quoi un client réclamerait le coup final et son
+	knockdown à la demande (ADR-012).
+]]
+export type AttackIntent = {
+	seq: number,
+	clientTime: number,
+}
+
+--[[
+	Contacts détectés localement par le client.
+
+	Les cibles sont des `Instance` : un mannequin d'entraînement n'est pas un
+	`Player`, et le serveur a de toute façon besoin de vérifier chaque référence
+	contre son registre de combattants. Aucun dégât, aucune distance, aucun
+	verdict ne transite ici — seulement « je pense avoir touché ceux-là, à cet
+	instant ».
+]]
+export type HitReport = {
+	seq: number,
+	clientTime: number,
+	targets: { Instance },
+}
+
+--[[
+	Verdict d'un coup, calculé par le serveur. Envoyé à l'attaquant et, si la
+	cible est un joueur, à elle aussi.
+]]
+export type HitResult = {
+	seq: number,
+	verdict: CombatTypes.Verdict,
+	damage: number,
+	target: Instance,
+	targetHealth: number,
+	hitstop: number,
+}
+
+--[[
+	Refus d'une demande, avec son code. Le client s'en sert pour expliquer plutôt
+	que de laisser croire à un coup perdu — un joueur qui frappe à travers un mur
+	doit savoir pourquoi rien ne s'est passé.
+]]
+export type Refusal = {
+	seq: number,
+	code: string,
+}
+
+--[[
 	Réglage à chaud d'une valeur d'équilibrage. `path` est vérifié contre la liste
 	blanche de `Config/Debug`, jamais interprété directement (ADR-013).
 ]]

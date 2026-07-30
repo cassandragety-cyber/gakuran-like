@@ -39,6 +39,13 @@ export type Tunable = {
 	label: string,
 	-- Renseigné uniquement pour les interrupteurs.
 	default: number?,
+	--[[
+		Interrupteur dont l'effet est purement client (un affichage). Le serveur
+		l'accepte, le stocke et le diffuse sans rien en faire lui-même. Sans cette
+		distinction, il faudrait déclarer côté serveur un effet vide pour chaque
+		option d'affichage, et un effet vide finit toujours par masquer un oubli.
+	]]
+	clientOnly: boolean?,
 }
 
 local function tunable(min: number, max: number, step: number, label: string): Tunable
@@ -50,7 +57,8 @@ local function switch(
 	max: number,
 	step: number,
 	label: string,
-	default: number
+	default: number,
+	clientOnly: boolean?
 ): Tunable
 	return {
 		target = "Switch",
@@ -59,6 +67,7 @@ local function switch(
 		step = step,
 		label = label,
 		default = default,
+		clientOnly = clientOnly,
 	}
 end
 
@@ -120,6 +129,10 @@ local Debug = {
 			qu'on aurait soi-même créées.
 		]]
 		["SimulatedLatencyMs"] = switch(0, 400, 10, "Latence simulée (ms aller-retour)", 0),
+
+		-- Booléen exprimé en 0/1 : un seul type d'entrée réglable vaut mieux que
+		-- deux listes blanches à tenir cohérentes.
+		["ShowHitboxes"] = switch(0, 1, 1, "Afficher les hitbox", 0, true),
 	} :: { [string]: Tunable },
 }
 

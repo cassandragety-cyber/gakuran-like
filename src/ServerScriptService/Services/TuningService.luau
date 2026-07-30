@@ -103,11 +103,13 @@ function TuningService.set(path: string, value: number): Result.Result<number>
 
 	if tunable.target == "Switch" then
 		local effect = SWITCH_EFFECTS[path]
-		if effect == nil then
+		if effect == nil and not tunable.clientOnly then
 			return Result.err("NoEffect", `l'interrupteur « {path} » n'a aucun effet déclaré`)
 		end
 		switchValues[path] = retained
-		effect(retained)
+		if effect then
+			effect(retained)
+		end
 	else
 		local applied = TuningGuard.applyToBalance(live :: any, path, retained)
 		if not applied.ok then
@@ -150,6 +152,22 @@ function TuningService.Init()
 	for path, tunable in Debug.Tunables do
 		if tunable.target == "Switch" then
 			switchValues[path] = tunable.default or 0
+		end
+	end
+
+	-- Un interrupteur serveur sans effet serait un curseur inerte. On le détecte
+	-- au boot plutôt qu'en se demandant, un après-midi de réglages plus tard,
+	-- pourquoi rien ne bouge.
+	for path, tunable in Debug.Tunables do
+		if
+			tunable.target == "Switch"
+			and not tunable.clientOnly
+			and SWITCH_EFFECTS[path] == nil
+		then
+			error(
+				`[TuningService] l'interrupteur serveur « {path} » n'a aucun effet déclaré`,
+				0
+			)
 		end
 	end
 

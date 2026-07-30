@@ -94,7 +94,7 @@ vers `Config`, `Net` ou un service : tout arrive en argument (ADR-011).
 |---|---|
 | `Types.luau` | `CombatState`, `StateName`, `Phase`, `Snapshot`, `TransitionContext`. Aucun runtime. |
 | `StateMachine.luau` | Les huit états de combat, la table de transitions demandées par le client, les priorités des transitions imposées par le serveur. Voir `docs/COMBAT.md` §1. |
-| `Frames.luau` | Lecture du frame data (phase courante) et progression de la chaîne d'attaque. |
+| `Frames.luau` | Lecture du frame data (phase courante), progression de la chaîne, hitbox du M1. |
 | `StaminaModel.luau` | Consommation et régénération de l'endurance selon le tag de combat. Dépense et régénération sont exclusives. |
 
 ### 3.2 `Config/` (data pure, gelée au boot, **zéro logique**)
@@ -110,6 +110,7 @@ vers `Config`, `Net` ou un service : tout arrive en argument (ADR-011).
 | `RateLimits.luau` | Un bucket (capacité, refill) par remote, indexé par le même id que `Net/Definitions`. |
 | `Debug.luau` | Liste blanche des valeurs réglables à chaud avec leurs bornes, liste des UserId administrateurs, interrupteurs de développement. |
 | `Input.luau` | Correspondance touches → actions nommées, par périphérique. Base des keybinds personnalisables. |
+| `Training.luau` | *(provisoire)* Terrain d'entraînement et mannequins. Disparaît avec la carte de la Phase 3. |
 | `Styles/init.luau` | Agrège et gèle tous les styles ; valide le schéma au boot (crash explicite si un style est malformé). |
 | `Styles/Rarity.luau` | Table de raretés (poids 60/25/10/4/1) + configuration du pity. |
 | `Styles/<Id>.luau` | Un fichier par style : `{ id, name, rarity, weight, statMods, skills, animPack, vfxPack }`. |
@@ -123,7 +124,7 @@ vers `Config`, `Net` ou un service : tout arrive en argument (ADR-011).
 |---|---|
 | `Definitions.luau` | **Le contrat réseau.** Pour chaque remote : id, direction, bucket de rate-limit, et un `parse` typé qui **reconstruit** le payload au lieu de le laisser passer. |
 | `init.luau` | Runtime : crée les `RemoteEvent` d'après `Definitions`, expose une API typée (`Net.Server.on(def, handler)`, `Net.Client.fire(def, payload)`), applique la chaîne middleware **rate-limit → parsing strict → handler**. Un payload invalide n'atteint jamais un service. Pas de `RemoteFunction` : un appel client→serveur qui yield est une attente que le client contrôle. |
-| `Parsers.luau` | Reconstruction des payloads. Séparé de `Definitions` pour que le contrat réseau reste lisible d'un coup d'œil. |
+| `Parsers/` | Reconstruction des payloads, découpée par domaine : `init` (primitives), `Session`, `Combat`. Séparé de `Definitions` pour que le contrat réseau reste lisible d'un coup d'œil. |
 | `Middleware.luau` | Les middlewares eux-mêmes (bucket, shape check, journalisation d'abus, kick soft). |
 | `LatencySim.luau` | Latence simulée côté serveur, en file **FIFO** : un simulateur qui réordonne les paquets fabrique des bugs inexistants. |
 
@@ -139,7 +140,7 @@ implique une entrée dans `THREAT_MODEL.md`) :
 | Module | Responsabilité |
 |---|---|
 | `ConfigValidator/` | Invariants de `Config/` vérifiés au boot, échec = refus de démarrer. `Check` (primitives), `CombatRules` (équilibrage + contrat durées d'animation ↔ frame data), `ContentRules` (raretés, cadences, conventions de clés, règles produit de la monétisation). |
-| `Rewind.luau` | Interpole l'historique de positions d'un joueur à un instant passé, borné par `Balance.Network.MaxRewind`. |
+| `Rewind.luau` | Interpole l'historique de positions à un instant passé, borné par `Balance.Network.MaxRewind`. Interpole plutôt que de prendre le voisin le plus proche : à 20 Hz d'échantillonnage, l'erreur arbitraire atteindrait 0,6 stud sur une portée de 7. |
 | `HitValidator.luau` | Décide si un hit rapporté est plausible : distance, angle, ligne de vue, fraîcheur du timestamp, cohérence de phase. Retourne `Result` avec un code d'erreur exploitable. |
 | `CombatResolver.luau` | **L'arbitre de la parade.** Fonction pure (instant d'impact, ouverture de garde, équilibrage) → verdict parade/blocage/coup + liste d'effets. Testable exhaustivement sans partie lancée. |
 | `TuningGuard.luau` | Valide un réglage à chaud : chemin présent dans la liste blanche de `Config/Debug`, valeur dans les bornes. |
@@ -154,6 +155,8 @@ implique une entrée dans `THREAT_MODEL.md`) :
 |---|---|---|
 | `SessionService` | Ouverture/fermeture de session joueur, et point d'abonnement unique pour les autres services — évite que chacun connecte son propre `PlayerRemoving` avec un ordre de nettoyage implicite. | — |
 | `DiagnosticsService` | Mesure du délai aller par joueur (base du dimensionnement du rembobinage) et exposition du profiler. | SessionService |
+| `CombatService` | Orchestration : refus, rembobinage, validation, résolution, application, réplication des verdicts. Aucune valeur numérique, aucune règle — seulement l'enchaînement. | StateService, TuningService |
+| `TrainingService` | Terrain provisoire (remplacé par la carte en Phase 3), mannequins, obstacle de test de ligne de vue, remise à zéro autonome. | StateService |
 | `DataService` | ProfileStore : session lock, chargement, migration, autosave, `BindToClose`, kick propre si échec. **Aucun autre service ne touche au datastore.** | — |
 | `CharacterService` | Cycle de vie du personnage : spawn, humanoïde, `Animator`, application des statMods, ragdoll. | SessionService |
 | `StateService` | État de combat autoritatif par joueur (`CombatState`, PV, endurance, jauge de garde) + historique de positions (`RingBuffer`). Un unique `Heartbeat` fait expirer les états échus — aucun `task.delay` par joueur. | CharacterService |
@@ -179,6 +182,9 @@ implique une entrée dans `THREAT_MODEL.md`) :
 | `TuningController` | Copie cliente de l'équilibrage, tenue à jour par `Debug.TuningSync`. Sans elle, la prédiction dériverait de l'autorité dès qu'un curseur bouge. |
 | `StateMirrorController` | Miroir de l'état autoritatif ; accueillera la prédiction locale et l'écart de prédiction. |
 | `MovementController` | Intention de sprint, envoyée seulement quand elle change. |
+| `CombatController` | Prédiction locale, ouverture de la hitbox à l'impact prédit, rapport de contacts, réception des verdicts et des refus. |
+| `HitboxDetector` | Interroge le volume et remonte au modèle ; `OverlapParams` réutilisé, résultat dédupliqué, coût mesuré. |
+| `HitboxVisualizer` | Rend le volume réellement interrogé, sur interrupteur. |
 | `InputController` | Abstraction clavier/gamepad/tactile → actions nommées (`Attack`, `Block`, `Dash`, `Skill1..4`). Seul endroit qui connaît `UserInputService`. |
 | `CombatController` | Prédiction locale : joue l'anim, détecte le hit (`GetPartBoundsInBox` + `OverlapParams`), envoie la demande, réconcilie avec la réponse serveur. |
 | `HitboxDetector` | Ouverture des hitbox (`GetPartBoundsInBox` + `OverlapParams`), filtrage du personnage propre, mesure via `Profiler.record("hitbox", …)`. |

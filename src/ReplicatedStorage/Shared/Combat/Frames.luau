@@ -13,6 +13,7 @@
 
 local BalanceConfig = require(script.Parent.Parent.Parent.Config.Balance)
 local Result = require(script.Parent.Parent.Result)
+local SharedTypes = require(script.Parent.Parent.Types)
 local Types = require(script.Parent.Types)
 
 type CombatState = Types.CombatState
@@ -21,6 +22,23 @@ type TransitionContext = Types.TransitionContext
 type Balance = BalanceConfig.Balance
 
 local Frames = {}
+
+--[[
+	Hitbox du chain M1, construite depuis l'équilibrage.
+
+	Elle est globale et non par coup : un joueur doit pouvoir apprendre UNE
+	portée. Des volumes qui changent à chaque coup de la chaîne rendraient
+	l'apprentissage impossible à l'œil. Les styles pourront fournir la leur en
+	Phase 2, mais toujours une par style, pas une par coup.
+]]
+function Frames.meleeHitbox(balance: Balance): SharedTypes.HitboxSpec
+	return {
+		shape = "Box",
+		size = balance.Hitbox.MeleeSize,
+		offset = balance.Hitbox.MeleeOffset,
+		maxTargets = balance.Hitbox.MaxTargetsPerSwing,
+	}
+end
 
 --[[
 	Frame data du coup à cet index, ou nil hors chaîne.

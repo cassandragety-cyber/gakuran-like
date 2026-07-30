@@ -19,7 +19,9 @@
 	Le point 1 est vérifié au boot par Net.initServer().
 ]]
 
-local Parsers = require(script.Parent.Parsers)
+local BalanceConfig = require(script.Parent.Parent.Config.Balance)
+local CombatParsers = require(script.Parent.Parsers.Combat)
+local SessionParsers = require(script.Parent.Parsers.Session)
 local Types = require(script.Parent.Parent.Shared.Types)
 
 export type Direction = "ClientToServer" | "ServerToClient"
@@ -54,14 +56,14 @@ Definitions.SystemPingRequest = {
 	id = "System.PingRequest",
 	direction = "ClientToServer",
 	rateLimit = "SystemPing",
-	parse = Parsers.parsePingRequest,
+	parse = SessionParsers.parsePingRequest,
 } :: Definition<Types.PingRequest>
 
 Definitions.SystemPingReply = {
 	id = "System.PingReply",
 	direction = "ServerToClient",
 	rateLimit = "SystemPing",
-	parse = Parsers.parsePingReply,
+	parse = SessionParsers.parsePingReply,
 } :: Definition<Types.PingReply>
 
 --[[
@@ -73,21 +75,21 @@ Definitions.CombatStateSync = {
 	id = "Combat.StateSync",
 	direction = "ServerToClient",
 	rateLimit = "CombatStateSync",
-	parse = Parsers.parseStateSync,
+	parse = SessionParsers.parseStateSync,
 } :: Definition<Types.StateSync>
 
 Definitions.MoveSprintState = {
 	id = "Move.SprintState",
 	direction = "ClientToServer",
 	rateLimit = "MoveSprint",
-	parse = Parsers.parseSprintIntent,
+	parse = SessionParsers.parseSprintIntent,
 } :: Definition<Types.SprintIntent>
 
 Definitions.DebugSetTuning = {
 	id = "Debug.SetTuning",
 	direction = "ClientToServer",
 	rateLimit = "DebugTuning",
-	parse = Parsers.parseTuningChange,
+	parse = SessionParsers.parseTuningChange,
 	devOnly = true,
 } :: Definition<Types.TuningChange>
 
@@ -95,9 +97,52 @@ Definitions.DebugTuningSync = {
 	id = "Debug.TuningSync",
 	direction = "ServerToClient",
 	rateLimit = "DebugTuning",
-	parse = Parsers.parseTuningChange,
+	parse = SessionParsers.parseTuningChange,
 	devOnly = true,
 } :: Definition<Types.TuningChange>
+
+--[[
+	Demande d'attaque. Le serveur en dérive l'index de chaîne (ADR-012).
+]]
+Definitions.CombatAttack = {
+	id = "Combat.Attack",
+	direction = "ClientToServer",
+	rateLimit = "CombatAttack",
+	parse = CombatParsers.parseAttackIntent,
+} :: Definition<Types.AttackIntent>
+
+--[[
+	Contacts détectés par le client. Le plafond de cibles est appliqué par le
+	parseur, avec la valeur d'équilibrage : un rapport surdimensionné est rejeté
+	avant d'avoir coûté un seul rembobinage.
+]]
+Definitions.CombatHitReport = {
+	id = "Combat.HitReport",
+	direction = "ClientToServer",
+	rateLimit = "CombatHitReport",
+	parse = function(value: unknown): Types.HitReport?
+		return CombatParsers.parseHitReport(value, BalanceConfig.Hitbox.MaxTargetsPerSwing)
+	end,
+} :: Definition<Types.HitReport>
+
+Definitions.CombatHitResult = {
+	id = "Combat.HitResult",
+	direction = "ServerToClient",
+	rateLimit = "CombatFeedback",
+	parse = CombatParsers.parseHitResult,
+} :: Definition<Types.HitResult>
+
+--[[
+	Refus, avec son code. Sans ce retour, un coup rejeté pour cause de mur ou de
+	cooldown se lit comme un coup perdu, et le joueur conclut que le jeu rate des
+	entrées.
+]]
+Definitions.CombatRefusal = {
+	id = "Combat.Refusal",
+	direction = "ServerToClient",
+	rateLimit = "CombatFeedback",
+	parse = CombatParsers.parseRefusal,
+} :: Definition<Types.Refusal>
 
 -- Liste itérable, construite à la main pour rester ordonnée et explicite.
 Definitions.List = {
@@ -105,6 +150,10 @@ Definitions.List = {
 	Definitions.SystemPingReply :: AnyDefinition,
 	Definitions.CombatStateSync :: AnyDefinition,
 	Definitions.MoveSprintState :: AnyDefinition,
+	Definitions.CombatAttack :: AnyDefinition,
+	Definitions.CombatHitReport :: AnyDefinition,
+	Definitions.CombatHitResult :: AnyDefinition,
+	Definitions.CombatRefusal :: AnyDefinition,
 	Definitions.DebugSetTuning :: AnyDefinition,
 	Definitions.DebugTuningSync :: AnyDefinition,
 }

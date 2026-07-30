@@ -76,6 +76,35 @@ trop fréquent*, jamais qu'il est *légitime*.
 | **Contre-mesure** | Trois couches : le remote n'existe pas en production ; `DevAccess.isAllowed` vérifie l'appelant à chaque appel ; `TuningGuard` n'accepte que les chemins de la liste blanche de `Config/Debug` et borne la valeur. La troisième couche existe pour le cas où un compte administrateur serait compromis : elle borne les dégâts au lieu de faire confiance à une identité. |
 | **Ce qui est hors liste blanche** | Les durées d'animation. Les régler à chaud casserait le contrat vérifié au boot entre `Animations` et `Balance` (ADR-009). |
 
+### `Combat.Attack` — client → serveur
+
+| | |
+|---|---|
+| **Payload** | `{ seq: entier, clientTime: nombre fini }` |
+| **Cadence** | 8 en rafale, 4/s soutenu |
+| **Ce que tenterait un exploiteur** | (a) marteler pour attaquer plus vite que le frame data ne l'autorise ; (b) réclamer directement le 4e coup pour obtenir un knockdown à la demande ; (c) attaquer depuis un état qui l'interdit (étourdi, au sol). |
+| **Contre-mesure** | (a) `StateMachine.canRequest` refuse tant que l'armé du coup courant n'est pas terminé, et la cadence borne le débit ; (b) **l'index de chaîne n'est pas dans le payload** — il est dérivé de l'état serveur par `Frames.nextChainIndex` (ADR-012) ; (c) aucune ligne de la table de transitions ne part de `Stunned`, `Knocked` ou `Downed`. |
+| **Risque résiduel** | Aucun sur le gameplay. Un refus est renvoyé avec son code, ce qui donne au client de quoi expliquer plutôt que de paraître perdre des entrées. |
+
+### `Combat.HitReport` — client → serveur
+
+**Le remote le plus exposé du jeu.** C'est ici qu'un exploiteur gagnerait le plus.
+
+| | |
+|---|---|
+| **Payload** | `{ seq: entier, clientTime: nombre fini, targets: { Model } }` |
+| **Cadence** | 8 en rafale, 4/s soutenu |
+| **Ce que tenterait un exploiteur** | (a) déclarer avoir touché tout le serveur d'un seul coup ; (b) toucher à travers un mur ; (c) toucher dans le dos, ou à 40 studs ; (d) antidater ou postdater `clientTime` pour gagner de la portée ; (e) rapporter un contact alors qu'aucun coup n'était en phase active ; (f) renvoyer dix fois le même contact pour décupler les dégâts ; (g) désigner une instance quelconque comme cible. |
+| **Contre-mesure** | (a) le parseur plafonne la liste à `MaxTargetsPerSwing` **et refuse les doublons**, avant tout rembobinage — un rapport surdimensionné ne coûte donc aucun raycast ; (b) raycast de ligne de vue entre les deux poses rembobinées ; (c) `HitValidator` revérifie la boîte dans le repère de l'attaquant **à l'instant revendiqué** et le cône de face (`FacingDot`) ; (d) `checkTimestamp` borne l'écart à `[-ClockTolerance, MaxRewind]`, et `Rewind` refuse au-delà de 0,25 s — mentir sur `clientTime` ne rapporte donc qu'une fraction de stud, pas une téléportation (ADR-001) ; (e) la phase est recalculée à `clientTime` depuis `lastSwing` et doit valoir `Active` (ADR-015) ; (f) `swingHits` retient les cibles déjà touchées par le coup en cours, et un doublon est ignoré sans être compté comme infraction — la perte de paquets fait légitimement renvoyer ; (g) chaque cible est cherchée dans le registre des combattants ; une instance inconnue est refusée. |
+| **Risque résiduel** | La lag compensation accorde, par construction, l'avantage au client sur un demi-échange — c'est le compromis assumé d'ADR-001, borné à 0,25 s. Ce qui reste hors de portée : frapper plus souvent, plus loin, à travers un mur, ou deux fois avec le même coup. |
+
+### `Combat.HitResult` / `Combat.Refusal` — serveur → client
+
+| | |
+|---|---|
+| **Surface d'attaque** | Nulle dans ce sens. |
+| **Ce qui est délibérément absent** | Le verdict ne contient ni la position de la cible, ni ses cooldowns, ni son état interne — seulement ce qui sert à jouer une réaction. Ce qu'on n'envoie pas ne peut pas être lu. |
+
 ---
 
 ## 3. Remotes prévus et leur risque anticipé
@@ -85,8 +114,8 @@ contre-mesure soit conçue avant le remote, et non ajoutée après.
 
 | Remote | Phase | Risque principal | Contre-mesure prévue |
 |---|---|---|---|
-| `Combat.Attack` `{seq, clientTime}` | 1 | Rafale d'attaques sans respecter cooldowns ni endurance ; réclamer directement le 4e coup pour un knockdown à la demande | Cadence 8/4-s ; l'index de chaîne est **dérivé** par `Frames.nextChainIndex` de l'état serveur et n'est pas dans le payload ; endurance et transition validées par `StateMachine.canRequest` |
-| `Combat.HitReport` `{seq, clientTime, targets}` | 1 | Déclarer des cibles hors de portée, à travers un mur, dans le dos, ou tout le serveur d'un coup ; rejouer le même swing | `Rewind` borné à 0,25 s puis `HitValidator` : distance, `FacingDot`, ligne de vue, fraîcheur d'horodatage, phase active cohérente, `AlreadyHitThisSwing` ; liste plafonnée à `MaxTargetsPerSwing` |
+| ~~`Combat.Attack`~~ *(livré, voir §2)* | 1 | Rafale d'attaques sans respecter cooldowns ni endurance ; réclamer directement le 4e coup pour un knockdown à la demande | Cadence 8/4-s ; l'index de chaîne est **dérivé** par `Frames.nextChainIndex` de l'état serveur et n'est pas dans le payload ; endurance et transition validées par `StateMachine.canRequest` |
+| ~~`Combat.HitReport`~~ *(livré, voir §2)* | 1 | Déclarer des cibles hors de portée, à travers un mur, dans le dos, ou tout le serveur d'un coup ; rejouer le même swing | `Rewind` borné à 0,25 s puis `HitValidator` : distance, `FacingDot`, ligne de vue, fraîcheur d'horodatage, phase active cohérente, `AlreadyHitThisSwing` ; liste plafonnée à `MaxTargetsPerSwing` |
 | `Combat.BlockState` `{open, clientTime}` | 1 | Antidater l'ouverture de garde pour parer rétroactivement ; maintenir une fenêtre de parade ouverte en permanence | Horodatage comparé à l'horloge serveur, tolérance 0,12 s ; fenêtre de 0,20 s calculée serveur ; cooldown de 0,55 s entre deux ouvertures ; le client ne déclare jamais « j'ai paré » (ADR-002) |
 | `Combat.Dash` `{direction 1..4, clientTime}` | 1 | Dash sans coût, i-frames permanentes, ou déplacement arbitraire | Direction bornée à un entier de 1 à 4 — jamais un vecteur ; cooldown et endurance serveur ; l'invulnérabilité est une propriété d'état serveur, pas un message |
 | `Style.Reroll` | 2 | Rerouler sans payer, ou rejouer un tirage jusqu'au Mythic | Le tirage est effectué serveur, le débit précède le tirage, le résultat n'est communiqué qu'une fois écrit dans le profil |
@@ -102,5 +131,6 @@ contre-mesure soit conçue avant le remote, et non ajoutée après.
 | Date | Phase | Modification |
 |---|---|---|
 | Phase 0 | 0 | Création. Deux remotes de diagnostic déclarés ; principes généraux et surface anticipée posés. |
+| Tranche 1.2 | 1 | `Combat.Attack`, `Combat.HitReport`, `Combat.HitResult`, `Combat.Refusal` implémentés et documentés. Plafond de cibles et refus des doublons appliqués au parsing, avant toute logique de combat. |
 | Tranche 1.1 | 1 | `Move.SprintState`, `Combat.StateSync`, `Debug.SetTuning`, `Debug.TuningSync` implémentés et documentés. Mécanisme `devOnly` en service. |
 | Phase 1 (conception) | 1 | Ajout de deux principes (ne pas demander ce qu'on peut déduire, `devOnly` non instancié en production). Payloads de combat figés et contre-mesures détaillées avant implémentation. |

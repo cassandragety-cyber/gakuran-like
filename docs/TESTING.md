@@ -474,7 +474,169 @@ cherchant pourquoi « le réglage ne marche pas ». Le boot l'attrape à la plac
 
 ---
 
+### Tranche 1.2 — Chaîne M1, hitbox, rembobinage, validation, mannequins
+
+Un **terrain d'entraînement provisoire** apparaît au démarrage : une plateforme,
+trois mannequins de face, un mur et un quatrième mannequin derrière. La Phase 3 le
+remplacera par la carte générée ; il existe parce qu'une place Studio vide n'a pas
+de sol.
+
+---
+
+#### T1.2.1 — Le boot charge huit services
+
+```
+[Boot/Server] configuration validée
+[Net] 10 remotes publiés
+[TuningService] réglage à chaud ACTIF sur ce serveur
+[TrainingService] terrain d'entraînement monté avec 4 mannequins
+[Boot/Server] 8 modules chargés : TuningService, CharacterService, SessionService,
+              StateService, CombatService, DiagnosticsService, MovementService,
+              TrainingService
+[Boot/Server] OK — serveur prêt en 12.4 ms
+```
+
+Côté **Client**, neuf controllers, dont l'ordre reflète encore les dépendances :
+`InputController, TuningController, StateMirrorController, HitboxVisualizer,
+CombatController, DiagnosticsController, DebugPanelController, HitboxDetector,
+MovementController`.
+
+---
+
+#### T1.2.2 — La chaîne de quatre coups, et son knockdown
+
+1. Se placer devant `Dummy_Face`, ouvrir **F2**.
+2. Cliquer quatre fois, sans traîner. Observer sur le panneau du mannequin :
+   `Hit −8`, `Hit −8`, `Hit −9`, `Hit −14`.
+3. Le quatrième coup fait passer le mannequin en **`Knocked`**, puis
+   **`GettingUp`**, puis `Idle` — la chaîne d'états spécifiée en 1.1, déclenchée
+   cette fois par un vrai coup.
+4. Sur le panneau F2, `Index de chaîne` monte de 1 à 4 et
+   `Chaîne expire dans` se recharge à chaque impact.
+5. Attendre plus de 0,55 s entre deux clics : l'index **repart à 1**.
+
+**Ce que ça prouve.** Le frame data de `Balance.Melee` est appliqué tel quel, la
+fenêtre de combo court depuis l'impact, et seul le dernier coup envoie au sol.
+
+---
+
+#### T1.2.3 — Le serveur refuse, et dit pourquoi
+
+Chaque refus s'affiche sur la ligne **`Dernier refus`** du panneau.
+
+| Manœuvre | Code attendu |
+|---|---|
+| Frapper `Dummy_Behind`, de l'autre côté du mur | `NoLineOfSight` |
+| Se placer dos à un mannequin et frapper | `BehindAttacker` |
+| Frapper à une dizaine de studs | *aucun rapport envoyé* — la hitbox est vide, rien ne part |
+| Marteler le clic pendant l'armé | `local:StillInWindup` (refusé **avant** l'envoi) |
+| Cliquer pendant un `Stunned` imposé par la console | `local:TransitionForbidden` |
+
+Le préfixe `local:` distingue un refus prédit par le client d'un refus renvoyé par
+le serveur. Un refus prédit n'a coûté aucun paquet — c'est le bénéfice direct du
+partage de `StateMachine` entre les deux côtés.
+
+**Ce que ça prouve.** La validation géométrique et temporelle est réelle, et
+chaque rejet est explicable au joueur au lieu de ressembler à un coup perdu.
+
+---
+
+#### T1.2.4 — Voir le volume qui a été interrogé
+
+1. Panneau F2 → **« Afficher les hitbox »** → 1.
+2. Frapper. Une boîte rouge translucide apparaît un quart de seconde, à la
+   position et aux dimensions **réellement** interrogées.
+3. Régler **« Marge serveur de portée »** à 0, puis frapper à la limite : les
+   coups commencent à être refusés en `TooFar`. Remonter à 2.5 : ils repassent.
+
+**Ce que ça prouve.** Le client et le serveur parlent du même volume, et la marge
+serveur est bien ce qui absorbe l'écart d'interpolation.
+
+---
+
+#### T1.2.5 — Un même coup ne touche jamais deux fois
+
+Console sur **Client** :
+
+```lua
+local net = game.ReplicatedStorage.BanchouNet
+-- Frapper un mannequin d'abord, puis renvoyer le même rapport plusieurs fois :
+local report = net["Combat.HitReport"]
+local dummy = workspace.TrainingGround.Dummy_Face
+for _ = 1, 5 do
+    report:FireServer({ seq = 999, clientTime = workspace:GetServerTimeNow(), targets = { dummy } })
+end
+```
+
+Attendu : **aucun** dégât supplémentaire. Selon l'instant, le serveur répond
+`WrongPhase` (aucun coup en phase active) ou ignore silencieusement le doublon si
+un coup est en cours et que la cible est déjà dans `swingHits`.
+
+Essayer aussi les rejets de forme, qui n'atteignent jamais le combat :
+
+```lua
+report:FireServer({ seq = 1, clientTime = 0, targets = { dummy, dummy } })  -- doublon
+report:FireServer({ seq = 1, clientTime = 0, targets = {} })                -- liste vide
+report:FireServer({ seq = 1, clientTime = 0, targets = { workspace } })     -- pas un Model combattant
+```
+
+Attendu côté **Server** : `payload malformé sur Combat.HitReport` pour les deux
+premiers, `UnknownTarget` pour le troisième.
+
+**Ce que ça prouve.** Le plafond de cibles, le refus des doublons et la
+vérification du registre s'appliquent **avant** tout rembobinage — un rapport
+abusif ne coûte pas un raycast.
+
+---
+
+#### T1.2.6 — Le rembobinage tient à 150 ms
+
+1. Panneau F2 → **« Latence simulée »** → 150.
+2. Frapper un mannequin en marchant latéralement.
+3. Attendu : les coups **portent toujours**. La ligne `Hitbox p95` reste sous
+   0,15 ms, `Écarts` de prédiction reste à 0 ou très bas.
+4. Pousser la latence à **400** : les coups commencent à être refusés en
+   `RewindExceeded` ou `StaleTimestamp` — le rembobinage est borné à 0,25 s et
+   refuse d'aller plus loin, même pour un client honnête.
+
+**Ce que ça prouve.** La compensation fonctionne dans la plage visée et **s'arrête
+net** à sa borne, exactement comme ADR-001 le prévoit. Le refus à 400 ms n'est pas
+un bug : c'est la borne qui fait son travail.
+
+---
+
+#### T1.2.7 — La prédiction locale et son écart
+
+Section **Prédiction** du panneau : `État prédit` change **immédiatement** au
+clic, avant toute réponse du serveur. `Écarts` compte les fois où l'autorité a
+contredit la prédiction.
+
+À latence simulée nulle, `Écarts` doit rester à **0** après plusieurs dizaines de
+coups. Avec 150 ms, il peut monter de quelques unités — chaque écart y est
+affiché sous la forme `prédit -> autorité`.
+
+**Ce que ça prouve.** Le client et le serveur appliquent les mêmes règles. Ce
+compteur est l'instrument du réglage de la parade en 1.4 : il transformera « ça a
+l'air bizarre » en un nombre.
+
+---
+
+#### T1.2.8 — Le coût des hitbox tient le budget
+
+Frapper une centaine de fois, puis console **Server** :
+
+```lua
+require(game.ServerScriptService.Server.Services.DiagnosticsService).dumpProfiler()
+```
+
+Attendu : une ligne `hit_validate` (coût de la validation serveur). Le coût
+client des hitbox se lit directement sur la ligne `Hitbox p95` du panneau.
+Budget : **p95 < 0,15 ms**.
+
+---
+
 ### Tranches suivantes
+
 
 Les interrupteurs de développement restants sont livrés avec la tranche qui leur
 donne quelque chose à faire, et pas avant : **forçage de la prédiction de parade**

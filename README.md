@@ -9,9 +9,10 @@ Documentation : [PLAN](docs/PLAN.md) · [DÉCISIONS](docs/DECISIONS.md) ·
 [COMBAT](docs/COMBAT.md) · [ANIMATIONS](docs/ANIMATIONS.md) ·
 [MODÈLE DE MENACE](docs/THREAT_MODEL.md) · [TESTS](docs/TESTING.md)
 
-**État : tranche 1.1 terminée** — état de combat autoritatif, machine à états à
-huit états, sprint, réglage à chaud et panneau de debug F2. Le chain d'attaque
-arrive en tranche 1.2. Découpage complet dans [PHASE1.md](docs/PHASE1.md).
+**État : tranche 1.2 terminée** — chaîne d'attaque de quatre coups, hitbox
+client validée par rembobinage serveur, mannequins d'entraînement, prédiction
+locale. La garde arrive en 1.3, la parade en 1.4. Découpage complet dans
+[PHASE1.md](docs/PHASE1.md).
 
 ---
 

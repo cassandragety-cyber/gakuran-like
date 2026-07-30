@@ -34,6 +34,18 @@ local RateLimits = {
 	-- 6 couvre un joueur qui tapote la touche, la cadence soutenue non.
 	MoveSprint = { capacity = 6, refillPerSecond = 3 } :: Limit,
 
+	-- Attaque : la chaîne de 4 coups la plus rapide dure environ 1,7 s, et un
+	-- joueur enchaîne les chaînes. La rafale couvre une chaîne complète, la
+	-- cadence soutenue le rythme réel d'un duel.
+	CombatAttack = { capacity = 8, refillPerSecond = 4 } :: Limit,
+
+	-- Un rapport de contact par coup porté. Même budget que l'attaque : au-delà,
+	-- le client rapporte plus de contacts qu'il n'a lancé de coups.
+	CombatHitReport = { capacity = 8, refillPerSecond = 4 } :: Limit,
+
+	-- Verdicts et refus, sens serveur -> client uniquement.
+	CombatFeedback = { capacity = 60, refillPerSecond = 30 } :: Limit,
+
 	-- Réglage à chaud : un curseur qu'on fait glisser produit une rafale
 	-- légitime. Généreux, mais le remote n'existe pas en production (ADR-013).
 	DebugTuning = { capacity = 30, refillPerSecond = 15 } :: Limit,

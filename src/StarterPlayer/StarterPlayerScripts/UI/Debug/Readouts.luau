@@ -17,8 +17,10 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Controllers = script.Parent.Parent.Parent.Controllers
+local CombatController = require(Controllers.CombatController)
 local DiagnosticsController = require(Controllers.DiagnosticsController)
 local InputController = require(Controllers.InputController)
+local Profiler = require(ReplicatedStorage.Shared.Profiler)
 local StateMachine = require(ReplicatedStorage.Shared.Combat.StateMachine)
 local StateMirrorController = require(Controllers.StateMirrorController)
 local Theme = require(script.Parent.Parent.Theme)
@@ -209,6 +211,59 @@ Readouts.rows = {
 			-- peut plus rien déduire : autant le signaler franchement.
 			local color = if age > 250 then Theme.Colors.Accent else Theme.Colors.TextMuted
 			return string.format("%d ms", math.floor(age)), color
+		end,
+	},
+	{
+		section = "Prédiction",
+		label = "État prédit",
+		read = function(): (string, Color3?)
+			return StateMirrorController.predicted().name, Theme.Colors.TextMuted
+		end,
+	},
+	{
+		section = "Prédiction",
+		label = "Écarts",
+		read = function(): (string, Color3?)
+			local divergence = StateMirrorController.divergence()
+			if divergence.count == 0 then
+				return "0", Theme.Colors.Good
+			end
+			-- Rouge dès le premier écart : à latence nulle en Studio il ne devrait
+			-- jamais y en avoir, donc tout écart mérite d'être regardé.
+			return string.format("%d · %s", divergence.count, divergence.last or "—"),
+				Theme.Colors.Accent
+		end,
+	},
+	{
+		section = "Combat",
+		label = "Dernier verdict",
+		read = function(): (string, Color3?)
+			local verdict = CombatController.lastOutcome()
+			return verdict or "—", if verdict then Theme.Colors.Good else Theme.Colors.TextMuted
+		end,
+	},
+	{
+		section = "Combat",
+		label = "Dernier refus",
+		read = function(): (string, Color3?)
+			local _, refusal, age = CombatController.lastOutcome()
+			if refusal == nil then
+				return "aucun", Theme.Colors.TextMuted
+			end
+			return string.format("%s · %.1f s", refusal, age), Theme.Colors.Warning
+		end,
+	},
+	{
+		section = "Performance",
+		label = "Hitbox p95",
+		read = function(): (string, Color3?)
+			local snapshot = Profiler.snapshot("hitbox")
+			if snapshot == nil then
+				return "aucun échantillon", Theme.Colors.TextMuted
+			end
+			-- Budget de la Phase 1 : 0,15 ms par ouverture.
+			local color = if snapshot.p95Ms > 0.15 then Theme.Colors.Accent else Theme.Colors.Good
+			return string.format("%.3f ms  (n=%d)", snapshot.p95Ms, snapshot.totalCalls), color
 		end,
 	},
 	{

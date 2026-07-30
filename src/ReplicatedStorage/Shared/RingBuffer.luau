@@ -38,6 +38,21 @@ function RingBuffer.push<T>(buffer: RingBuffer<T>, value: T)
 end
 
 --[[
+	Élément à l'index donné, 1 = le plus ancien. Retourne nil hors bornes.
+
+	Existe pour que le rembobinage puisse parcourir l'historique sans allouer :
+	`toArray` copie, et un coup rapporté déclenche un parcours par cible.
+]]
+function RingBuffer.at<T>(buffer: RingBuffer<T>, index: number): T?
+	if index < 1 or index > buffer.count then
+		return nil
+	end
+	local start = if buffer.count < buffer.capacity then 1 else buffer.head
+	local slot = (start + index - 2) % buffer.capacity + 1
+	return buffer.items[slot]
+end
+
+--[[
 	Copie les éléments du plus ancien au plus récent. Alloue : réservé aux
 	chemins froids (dump du profiler), jamais à une frame de combat.
 ]]

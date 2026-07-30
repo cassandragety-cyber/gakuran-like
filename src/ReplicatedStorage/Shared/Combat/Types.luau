@@ -25,6 +25,16 @@ export type StateName =
 export type Phase = "Windup" | "Active" | "Recovery"
 
 --[[
+	Résultat d'un coup validé. Les quatre valeurs sont figées par docs/COMBAT.md
+	§5, parce que le retour visuel en deux temps du client est construit autour :
+	`Ignored` couvre les i-frames, `Hit` les dégâts pleins. `Blocked` arrive avec
+	la garde (tranche 1.3) et `Parried` avec la parade (tranche 1.4) ; les deux
+	sont déjà dans le contrat pour que le protocole n'ait pas à changer sous les
+	pieds du client à ce moment-là.
+]]
+export type Verdict = "Hit" | "Blocked" | "Parried" | "Ignored"
+
+--[[
 	État de combat d'un joueur. **Entièrement sérialisable** : aucune référence
 	d'instance, aucune closure. C'est ce qui permet de le répliquer tel quel,
 	de l'afficher dans le panneau F2, et de comparer la prédiction du client à

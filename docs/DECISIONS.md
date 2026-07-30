@@ -387,6 +387,64 @@ exactement l'intention.
 
 ---
 
+## ADR-014 — Les combattants sont indexés par `Model`, pas par `Player`
+
+**Statut :** accepté (tranche 1.2) · **Impact :** structurant pour tout le combat
+
+**Contexte.** La tranche 1.1 tenait l'état de combat dans un registre indexé par
+`Player`. La 1.2 introduit le mannequin d'entraînement, qui n'est pas un joueur,
+et les tranches 1.3 et 1.4 ont besoin qu'il **garde** et qu'il **pare** pour être
+testables : on ne règle pas une fenêtre de parade contre une cible qui ne pare
+jamais.
+
+**Décision.** Le registre est indexé par `Model`. Chaque enregistrement porte un
+champ `player: Player?`, nil pour un mannequin. Un index secondaire par joueur
+conserve l'accès direct là où il est naturel (`ofPlayer`). Tout le reste du code
+de combat — validation, résolution, dégâts, knockdown — ne fait pas la
+différence.
+
+**Alternative écartée.** Garder le registre par joueur et donner aux mannequins
+leur propre petit système de dégâts, plus simple à écrire.
+
+**Pourquoi.** Deux registres, c'est deux chemins de dégâts, donc deux endroits où
+la règle peut diverger. Et la divergence tomberait précisément là où elle coûte le
+plus cher : on réglerait la parade contre un mannequin qui l'applique un peu
+différemment des joueurs, on serait satisfait, et le premier duel réel révélerait
+l'écart. Une cible d'entraînement ne vaut que si elle se comporte exactement comme
+un adversaire.
+
+**Coût payé.** `StateService` a été découpé en quatre modules (registre, types,
+transitions, pas de temps) pour tenir la limite de 300 lignes. Le découpage était
+de toute façon dû.
+
+---
+
+## ADR-015 — La phase d'un coup est validée à l'instant revendiqué, pas à la réception
+
+**Statut :** accepté (tranche 1.2) · **Impact :** fort
+
+**Contexte.** La hitbox n'est ouverte que pendant la phase active d'un coup, qui
+dure entre 0,10 et 0,15 s. Un rapport de contact met un demi-RTT à remonter : à
+150 ms de latence, l'attaquant est déjà en récupération quand son rapport arrive.
+
+**Décision.** Le serveur conserve `Combatant.lastSwing` — index et instant de
+départ du dernier coup — qui **survit au retour à `Idle`**. La phase est
+recalculée à `clientTime` depuis cette trace, jamais lue depuis l'état courant.
+Le client, symétriquement, horodate son rapport à l'instant d'impact **prédit**,
+pas à la frame où le paquet part.
+
+**Alternative écartée.** Valider contre l'état courant de l'attaquant, en
+élargissant la fenêtre acceptée pour absorber la latence.
+
+**Pourquoi.** Élargir la fenêtre revient à accorder à tout le monde la tolérance
+du joueur le plus lent, donc à autoriser des coups portés bien après la fin de la
+phase active — exactement le « hit fantôme » que le brief interdit. Valider contre
+un instant reconstruit garde la fenêtre à sa vraie durée pour tous, quelle que
+soit la latence. C'est le même raisonnement qu'ADR-001, appliqué au temps plutôt
+qu'à l'espace.
+
+---
+
 ## Décisions différées (à trancher au moment dit, notées ici pour ne pas être oubliées)
 
 | Sujet | Phase | Pourquoi on attend |
