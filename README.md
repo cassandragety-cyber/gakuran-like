@@ -38,6 +38,11 @@ connexions de personnage passe par Trove. Le serveur refuse de démarrer avec un
 message explicite si les dépendances manquent, plutôt que d'échouer sur une erreur
 de `require` illisible.
 
+Wally installe dans **deux** dossiers, tous deux montés par Rojo et absents du
+dépôt : `Packages/` (partagé → `ReplicatedStorage.Packages`) et
+`ServerPackages/` (réservé serveur → `ServerScriptService.ServerPackages`).
+ProfileStore, déclaré `realm = "server"`, atterrit dans le second.
+
 ## Développer
 
 ```bash

@@ -5,13 +5,20 @@ registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"
 license = "UNLICENSED"
 
-# Phase 0 ne require AUCUN de ces paquets (cf. ADR-008) : le boot doit
-# fonctionner avant même `wally install`. Ils entrent en jeu à partir de la
-# Phase 1 (Trove) et de la Phase 2 (ProfileStore).
+# Une version indiquée ici est un MINIMUM : Wally résout `1.5.0` en
+# `>=1.5.0, <2.0.0` et installera donc la dernière 1.x disponible. Épingler une
+# version exacte demanderait `=1.5.0`.
 [dependencies]
 Trove = "sleitnick/trove@1.5.0"
 Signal = "sleitnick/signal@2.0.1"
 Promise = "evaera/promise@4.0.0"
 
+# ProfileStore est publié sous le scope `lm-loleris`, pas `loleris` — piège
+# classique, le compte GitHub et le scope Wally ne portent pas le même nom. Sa
+# dernière version est la 1.0.3 (vérifié dans l'index Wally).
+#
+# Il déclare `realm = "server"`, il doit donc rester dans cette section : Wally
+# refuse un paquet serveur déclaré comme partagé, et l'installe dans
+# `ServerPackages/` (monté sur `ServerScriptService.ServerPackages` par Rojo).
 [server-dependencies]
-ProfileStore = "loleris/profilestore@1.2.0"
+ProfileStore = "lm-loleris/profilestore@1.0.3"
