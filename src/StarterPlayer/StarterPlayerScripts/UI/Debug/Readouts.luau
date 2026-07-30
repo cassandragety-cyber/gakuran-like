@@ -236,6 +236,14 @@ Readouts.rows = {
 	},
 	{
 		section = "Combat",
+		label = "Coups envoyés",
+		read = function(): (string, Color3?)
+			local sent = CombatController.sentCount()
+			return tostring(sent), if sent == 0 then Theme.Colors.Warning else Theme.Colors.Good
+		end,
+	},
+	{
+		section = "Combat",
 		label = "Dernier verdict",
 		read = function(): (string, Color3?)
 			local verdict = CombatController.lastOutcome()
@@ -270,11 +278,15 @@ Readouts.rows = {
 		section = "Entrées",
 		label = "Dernière action",
 		read = function(): (string, Color3?)
-			local action, age = InputController.lastFired()
+			local action, age, listeners = InputController.lastFired()
 			if action == nil then
 				return "aucune", Theme.Colors.TextMuted
 			end
-			return string.format("%s · %.1f s", action, age)
+			-- Le nombre d'abonnés distingue « l'entrée n'arrive pas » de « l'entrée
+			-- arrive mais personne ne l'écoute ». Les deux se ressemblent à l'écran
+			-- et ne se corrigent pas au même endroit.
+			return string.format("%s · %d abonné(s) · %.1f s", action, listeners, age),
+				if listeners == 0 then Theme.Colors.Accent else Theme.Colors.Text
 		end,
 	},
 }

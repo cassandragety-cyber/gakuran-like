@@ -56,24 +56,40 @@ local pending: PendingSwing? = nil
 local lastVerdict: string? = nil
 local lastRefusal: string? = nil
 local lastEventAt = 0
+local sentCount = 0
 
 function CombatController.lastOutcome(): (string?, string?, number)
 	return lastVerdict, lastRefusal, Clock.monotonic() - lastEventAt
 end
 
-local function requestAttack()
+function CombatController.sentCount(): number
+	return sentCount
+end
+
+--[[
+	Tente une attaque et **retourne toujours** ce qui s'est passé.
+
+	Le retour n'est pas un confort : la version précédente pouvait sortir sans
+	rien dire à trois endroits, ce qui rendait une panne indiscernable d'un
+	joueur qui ne clique pas. Une fonction qui peut échouer en silence est une
+	fonction qu'on ne peut pas déboguer à distance.
+]]
+local function requestAttack(): string
 	local balance = TuningController.balance()
+
 	local attempt = StateMirrorController.tryPredict("Attacking")
 	if not attempt.ok then
 		lastRefusal = `local:{attempt.code}`
 		lastEventAt = Clock.monotonic()
-		return
+		return `refus local : {attempt.code} ({attempt.detail or "sans détail"})`
 	end
 
 	local state = attempt.value
 	local step = Frames.stepFor(state.chainIndex, balance)
 	if step == nil then
-		return
+		lastRefusal = `local:NoFrameData`
+		lastEventAt = Clock.monotonic()
+		return `aucun frame data pour l'index de chaîne {state.chainIndex}`
 	end
 
 	local sequence = nextSequence
@@ -85,10 +101,35 @@ local function requestAttack()
 		reported = false,
 	}
 
+	if not Net.Client.available(Definitions.CombatAttack) then
+		lastRefusal = "local:RemoteMissing"
+		lastEventAt = Clock.monotonic()
+		return "le remote Combat.Attack est absent côté client"
+	end
+
 	Net.Client.fire(Definitions.CombatAttack, {
 		seq = sequence,
 		clientTime = state.enteredAt,
 	})
+	sentCount += 1
+
+	return `coup {sequence} envoyé, index {state.chainIndex}, impact dans {string.format(
+		"%.0f",
+		step.windup * 1000
+	)} ms`
+end
+
+--[[
+	Déclenche une attaque sans passer par l'entrée clavier/souris.
+
+	Sert à couper un diagnostic en deux : si cet appel produit un coup alors que
+	le clic n'en produit pas, la panne est dans la chaîne d'entrée et pas dans le
+	combat. Utilisable depuis la barre de commande du client.
+]]
+function CombatController.debugAttack(): string
+	local outcome = requestAttack()
+	Log.info(SCOPE, `debugAttack : {outcome}`)
+	return outcome
 end
 
 --[[
@@ -161,9 +202,12 @@ function CombatController.Init()
 	Net.Client.on(Definitions.CombatRefusal, onRefusal)
 
 	InputController.onAction("Attack", function(phase)
-		if phase == "Begin" then
-			requestAttack()
+		if phase ~= "Begin" then
+			return
 		end
+		-- Journalisé en Info et non en Debug : c'est la ligne qu'on veut lire en
+		-- premier quand « le clic ne fait rien ».
+		Log.info(SCOPE, requestAttack())
 	end)
 end
 

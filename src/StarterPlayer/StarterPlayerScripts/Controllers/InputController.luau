@@ -28,6 +28,7 @@ local keyToAction: { [Enum.KeyCode]: string } = {}
 local buttonToAction: { [Enum.UserInputType]: string } = {}
 local lastAction: string? = nil
 local lastActionAt = 0
+local lastListenerCount = 0
 
 function InputController.onAction(action: string, listener: Listener)
 	local bucket = listeners[action]
@@ -44,10 +45,18 @@ end
 	`InputObject`, on entre par le même endroit que tout le monde.
 ]]
 function InputController.fire(action: string, phase: Phase)
+	local bucket = listeners[action]
+
 	lastAction = `{action} ({phase})`
 	lastActionAt = os.clock()
+	--[[
+		Le nombre d'abonnés est retenu avec l'action. Sans lui, le panneau affiche
+		« l'entrée est arrivée » alors qu'elle n'a été distribuée à personne — les
+		deux situations se ressemblent à l'écran et ne se corrigent pas au même
+		endroit.
+	]]
+	lastListenerCount = if bucket then #bucket else 0
 
-	local bucket = listeners[action]
 	if bucket == nil then
 		return
 	end
@@ -63,8 +72,8 @@ end
 	c'est ce qui permet de vérifier un keybind avant que l'action ait un
 	consommateur.
 ]]
-function InputController.lastFired(): (string?, number)
-	return lastAction, os.clock() - lastActionAt
+function InputController.lastFired(): (string?, number, number)
+	return lastAction, os.clock() - lastActionAt, lastListenerCount
 end
 
 function InputController.isHeldAction(action: string): boolean

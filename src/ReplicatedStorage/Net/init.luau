@@ -30,6 +30,9 @@ local RateLimits = require(script.Parent.Config.RateLimits)
 local FOLDER_NAME = "BanchouNet"
 local SCOPE = "Net"
 
+-- Au-delà, on considère qu'un remote attendu n'arrivera pas et on le dit.
+local RESOLVE_TIMEOUT = 10
+
 local Net = {}
 Net.Server = {}
 Net.Client = {}
@@ -206,11 +209,21 @@ local function clientRemote(definition: Definitions.AnyDefinition): RemoteEvent?
 	end
 
 	local folder = ReplicatedStorage:WaitForChild(FOLDER_NAME) :: Folder
+
+	--[[
+		Le délai n'est pas une précaution de style : `WaitForChild` sans borne, à
+		l'intérieur d'un gestionnaire d'entrée, gèle ce gestionnaire pour toujours
+		sans rien afficher. C'est la pire panne possible — le jeu ne répond plus à
+		une touche et l'Output reste vide. Une borne transforme ça en message.
+	]]
 	local remote: Instance? = if definition.devOnly
 		then folder:FindFirstChild(definition.id)
-		else folder:WaitForChild(definition.id)
+		else folder:WaitForChild(definition.id, RESOLVE_TIMEOUT)
 
 	if remote == nil then
+		if not definition.devOnly then
+			Log.error(SCOPE, `remote {definition.id} absent après {RESOLVE_TIMEOUT} s`)
+		end
 		return nil
 	end
 
