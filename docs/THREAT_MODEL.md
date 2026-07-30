@@ -17,6 +17,8 @@ sans ligne ici est un remote non revu.
 | Rejet des nombres pathologiques | `NaN`, `±inf` et les flottants là où un entier est attendu sont refusés à l'entrée. `NaN` est le vecteur classique : il traverse toutes les comparaisons `<` et `>` sans jamais les satisfaire. |
 | Escalade graduée | Dépassement de cadence et payload malformé alimentent le même compteur ; à 12 infractions, kick. Un client honnête ne produit jamais de payload malformé, même sous une latence extrême. |
 | Nettoyage | Les compteurs et buckets sont détruits au `PlayerRemoving` — sinon un serveur de longue durée fuit une table par joueur passé. |
+| Le serveur ne demande pas ce qu'il peut déduire | Un champ que le client n'envoie pas est un champ qu'on n'a pas à valider. L'index de chaîne d'attaque est dérivé de l'état serveur, pas reçu ; la direction d'un dash est un entier de 1 à 4, pas un `Vector3` (ADR-012). |
+| Les remotes de développement n'existent pas en production | Un remote marqué `devOnly` n'est **pas instancié** hors Studio et hors liste d'administrateurs : il n'apparaît pas dans l'arbre, aucune régression de logique ne peut le rouvrir (ADR-013). |
 
 **Ce que ces principes ne couvrent pas, et qui est traité ailleurs :** la
 cohérence de gameplay (distance, ligne de vue, cooldown, endurance, état
@@ -55,10 +57,11 @@ contre-mesure soit conçue avant le remote, et non ajoutée après.
 
 | Remote | Phase | Risque principal | Contre-mesure prévue |
 |---|---|---|---|
-| `Combat.Attack` | 1 | Rafale d'attaques sans respecter les cooldowns ni l'endurance | Cadence + machine à états serveur ; le cooldown et l'endurance sont vérifiés côté serveur, jamais annoncés par le client |
-| `Combat.HitReport` | 1 | Déclarer des cibles hors de portée, à travers un mur, ou tout le serveur d'un coup | Rembobinage borné à 0,25 s, distance + angle + ligne de vue revérifiés, nombre de cibles plafonné par la hitbox |
-| `Combat.BlockState` | 1 | Antidater l'ouverture de garde pour parer rétroactivement | Horodatage comparé à l'horloge serveur avec une tolérance de 0,12 s ; le client ne déclare jamais « j'ai paré » (ADR-002) |
-| `Combat.Dash` | 1 | Dash sans coût, ou i-frames permanentes | Cooldown et endurance serveur ; l'invulnérabilité est une propriété d'état serveur, pas un message |
+| `Combat.Attack` `{seq, clientTime}` | 1 | Rafale d'attaques sans respecter cooldowns ni endurance ; réclamer directement le 4e coup pour un knockdown à la demande | Cadence 8/4-s ; l'index de chaîne est **dérivé** par `ComboMachine` de l'état serveur et n'est pas dans le payload ; endurance et transition validées par `StateMachine.canRequest` |
+| `Combat.HitReport` `{seq, clientTime, targets}` | 1 | Déclarer des cibles hors de portée, à travers un mur, dans le dos, ou tout le serveur d'un coup ; rejouer le même swing | `Rewind` borné à 0,25 s puis `HitValidator` : distance, `FacingDot`, ligne de vue, fraîcheur d'horodatage, phase active cohérente, `AlreadyHitThisSwing` ; liste plafonnée à `MaxTargetsPerSwing` |
+| `Combat.BlockState` `{open, clientTime}` | 1 | Antidater l'ouverture de garde pour parer rétroactivement ; maintenir une fenêtre de parade ouverte en permanence | Horodatage comparé à l'horloge serveur, tolérance 0,12 s ; fenêtre de 0,20 s calculée serveur ; cooldown de 0,55 s entre deux ouvertures ; le client ne déclare jamais « j'ai paré » (ADR-002) |
+| `Combat.Dash` `{direction 1..4, clientTime}` | 1 | Dash sans coût, i-frames permanentes, ou déplacement arbitraire | Direction bornée à un entier de 1 à 4 — jamais un vecteur ; cooldown et endurance serveur ; l'invulnérabilité est une propriété d'état serveur, pas un message |
+| `Debug.SetTuning` `{path, value}` | 1 | **Réécrire l'équilibrage** : dégâts, fenêtres de parade | `devOnly` — le remote n'existe pas en production ; `TuningGuard` applique une liste blanche de chemins avec bornes, donc même un compte administrateur compromis reste borné ; les durées d'animation sont hors liste blanche pour ne pas casser le contrat du boot (ADR-009) |
 | `Style.Reroll` | 2 | Rerouler sans payer, ou rejouer un tirage jusqu'au Mythic | Le tirage est effectué serveur, le débit précède le tirage, le résultat n'est communiqué qu'une fois écrit dans le profil |
 | `Economy.Transfer` | 4 | Duplication de monnaie, blanchiment entre comptes complices | Débit et crédit dans la même transaction serveur ; `Systems/TransferGuard` applique plafond glissant, cooldown et détection d'aller-retour |
 | `Economy.JobAction` | 4 | Valider les étapes d'un métier sans les accomplir | Chaque étape a une condition vérifiable serveur (position, temps écoulé, ordre) ; la paie est calculée serveur |
@@ -72,3 +75,4 @@ contre-mesure soit conçue avant le remote, et non ajoutée après.
 | Date | Phase | Modification |
 |---|---|---|
 | Phase 0 | 0 | Création. Deux remotes de diagnostic déclarés ; principes généraux et surface anticipée posés. |
+| Phase 1 (conception) | 1 | Ajout de deux principes (ne pas demander ce qu'on peut déduire, `devOnly` non instancié en production). Payloads de combat figés et contre-mesures détaillées avant implémentation. |

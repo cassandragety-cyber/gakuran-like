@@ -295,6 +295,98 @@ rendra tentant.
 
 ---
 
+## ADR-011 — La table d'équilibrage est injectée en argument, pas require
+
+**Statut :** accepté (Phase 1, conception) · **Impact :** structurant pour tout le combat
+
+**Contexte.** Trois besoins arrivent en même temps et semblent se contredire.
+`Config/` est gelé depuis la Phase 0, et cette garantie a de la valeur. Le
+produit demande un panneau de réglage à chaud pour ne pas éditer un fichier
+entre deux essais sur le mannequin. Et la parade doit être testable
+exhaustivement, ce qui suppose de pouvoir lui fournir des valeurs fabriquées.
+
+**Décision.** Aucun module de `Shared/Combat/` ni de `Systems/` ne fait de
+`require` sur `Config.Balance`. Chaque fonction pure reçoit la table
+d'équilibrage **en argument**. `TuningService` détient une copie unique, créée au
+boot, que le panneau F2 modifie en place ; `Config.Balance` reste gelé et sert de
+référence pour la réinitialisation. En production, la copie est regelée après
+création, donc l'immuabilité tient aussi.
+
+**Alternative écartée.** Dégeler `Config/` et laisser le panneau écrire dedans.
+Variante écartée aussi : un accesseur `Tuning.get("Parry.Window")` appelé partout.
+
+**Pourquoi.** Dégeler `Config/` aurait rendu possible en production la classe de
+bug que le gel élimine — une valeur d'équilibrage modifiée par erreur depuis un
+script de gameplay, invisible jusqu'à ce qu'un joueur le remarque. L'accesseur
+par chaîne de caractères, lui, transforme chaque lecture en recherche
+textuelle non vérifiée par le typage : une faute de frappe dans `"Parry.Windo"`
+renverrait `nil` à l'exécution, au milieu d'un combat. L'injection donne les
+trois bénéfices d'un coup et ne coûte qu'un paramètre de plus par fonction.
+
+**Effet de bord accepté.** Les signatures sont plus verbeuses. C'est le prix, et
+il est visible dans le bon sens : lire `resolve(step, defender, now, balance)`
+dit immédiatement de quoi le résultat dépend.
+
+---
+
+## ADR-012 — Le client n'annonce jamais où il en est dans sa chaîne
+
+**Statut :** accepté (Phase 1, conception) · **Impact :** fort
+
+**Contexte.** Le quatrième coup de la chaîne envoie l'adversaire au sol. Il faut
+bien décider quel coup est joué à chaque appui.
+
+**Décision.** La demande `Combat.Attack` contient un numéro de séquence et un
+horodatage, **rien d'autre**. Le serveur dérive l'index de chaîne de l'état qu'il
+détient, via `ComboMachine.nextIndex`. Même logique ailleurs : la direction du
+dash est un entier de 1 à 4, jamais un `Vector3`.
+
+**Alternative écartée.** Laisser le client envoyer `chainIndex`, ce que le
+serveur validerait ensuite.
+
+**Pourquoi.** Un client qui peut annoncer « je frappe le coup 4 » possède un
+knockdown à la demande, et la seule défense serait de recalculer l'index côté
+serveur — c'est-à-dire de ne pas utiliser la valeur envoyée. Autant ne pas la
+demander : un champ qu'on n'accepte pas est un champ qu'on n'a pas à valider.
+Généralisation retenue pour toute la phase : **si le serveur peut dériver une
+valeur, le client ne l'envoie pas.** Un `Vector3` de direction libre est le même
+piège sous un autre nom, en pire — c'est un vecteur de téléportation.
+
+---
+
+## ADR-013 — Les remotes de développement n'existent pas en production
+
+**Statut :** accepté (Phase 1, conception) · **Impact :** moyen
+
+**Contexte.** Le panneau F2 doit pouvoir réécrire des valeurs d'équilibrage.
+C'est, de loin, le remote le plus dangereux du projet : il touche directement
+aux dégâts et aux fenêtres de parade.
+
+**Décision.** `Net/Definitions` gagne un champ `devOnly`. `Net.initServer()`
+**ne crée pas** l'instance `RemoteEvent` quand le serveur n'est ni en Studio ni
+autorisé par `Config/Debug.AdminUserIds`. En plus de ça, `TuningGuard` applique
+une liste blanche de chemins avec bornes : une valeur absente de la liste est
+refusée même en Studio.
+
+**Alternative écartée.** Déclarer le remote partout et rejeter les appels non
+autorisés dans le handler.
+
+**Pourquoi.** Un handler qui rejette est une ligne de code qu'une erreur future
+peut affaiblir — un test d'autorisation inversé, une condition de debug laissée
+à `true` avant un déploiement. Un remote qui n'a pas été instancié n'offre
+aucune surface : il n'apparaît pas dans l'arbre, un outil d'exploration ne le
+trouve pas, et aucune régression de logique ne peut le rouvrir. La liste blanche
+de `TuningGuard` est la deuxième couche, pour le cas où un compte administrateur
+serait compromis : elle borne les dégâts possibles au lieu de faire confiance à
+l'identité.
+
+**Note.** Les durées d'animation sont volontairement absentes de la liste
+blanche. Les modifier à chaud casserait le contrat vérifié au boot en Phase 0
+(ADR-009) ; il faut passer par les fichiers et redémarrer, ce qui est
+exactement l'intention.
+
+---
+
 ## Décisions différées (à trancher au moment dit, notées ici pour ne pas être oubliées)
 
 | Sujet | Phase | Pourquoi on attend |

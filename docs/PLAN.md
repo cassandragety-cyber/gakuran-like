@@ -85,6 +85,17 @@ avant de proposer un arbitrage de planning.
 | `Result.luau` | `Ok(v)` / `Err(code, detail)` — type de retour de toutes les validations serveur, pour ne jamais confondre « refusé » et « erreur ». |
 | `Log.luau` | Logging à niveaux avec préfixe de module, silencieux en prod sauf `warn`/`error`. |
 
+### 3.1.b `Shared/Combat/` (pur, partagé client **et** serveur — Phase 1)
+
+Les règles que les deux côtés doivent appliquer à l'identique. Aucun `require`
+vers `Config`, `Net` ou un service : tout arrive en argument (ADR-011).
+
+| Module | Responsabilité |
+|---|---|
+| `StateMachine.luau` | Les huit états de combat, la table de transitions demandées par le client, les priorités des transitions imposées par le serveur. Voir `docs/COMBAT.md` §1. |
+| `ComboMachine.luau` | Index de chaîne, fenêtre de combo, remise à zéro sur coup dans le vide. |
+| `StaminaModel.luau` | Consommation et régénération de l'endurance selon le tag de combat. |
+
 ### 3.2 `Config/` (data pure, gelée au boot, **zéro logique**)
 
 | Module | Responsabilité |
@@ -96,6 +107,7 @@ avant de proposer un arbitrage de planning.
 | `DataStores.luau` | Noms de DataStore/MemoryStore, versionnés (`Banchou_<Nom>_v<N>`), et version du schéma de profil. |
 | `Monetization.luau` | Table des gamepasses et dev products (id, nom, prix suggéré, effet déclaratif). |
 | `RateLimits.luau` | Un bucket (capacité, refill) par remote, indexé par le même id que `Net/Definitions`. |
+| `Debug.luau` | *(Phase 1)* Liste blanche des valeurs réglables à chaud avec leurs bornes, liste des UserId administrateurs, interrupteurs de développement. |
 | `Styles/init.luau` | Agrège et gèle tous les styles ; valide le schéma au boot (crash explicite si un style est malformé). |
 | `Styles/Rarity.luau` | Table de raretés (poids 60/25/10/4/1) + configuration du pity. |
 | `Styles/<Id>.luau` | Un fichier par style : `{ id, name, rarity, weight, statMods, skills, animPack, vfxPack }`. |
@@ -123,10 +135,10 @@ implique une entrée dans `THREAT_MODEL.md`) :
 | Module | Responsabilité |
 |---|---|
 | `ConfigValidator/` | Invariants de `Config/` vérifiés au boot, échec = refus de démarrer. `Check` (primitives), `CombatRules` (équilibrage + contrat durées d'animation ↔ frame data), `ContentRules` (raretés, cadences, conventions de clés, règles produit de la monétisation). |
-| `ComboMachine.luau` | Machine à états du chain M1 : index de coup, fenêtre de combo, reset, éligibilité du coup suivant. |
-| `CombatResolver.luau` | Applique un `SkillSpec` résolu à une cible : ordre block → parry → i-frames → dégâts → poise → statuts. Retourne une liste d'effets, n'écrit rien. |
-| `HitValidator.luau` | Décide si un hit rapporté est plausible : distance, angle, cohérence d'état, fraîcheur du timestamp, cooldown. Retourne `Result`. |
-| `StaminaModel.luau` | Consommation/régen d'endurance en fonction de l'état (sprint, dash, skill, hors combat). |
+| `Rewind.luau` | Interpole l'historique de positions d'un joueur à un instant passé, borné par `Balance.Network.MaxRewind`. |
+| `HitValidator.luau` | Décide si un hit rapporté est plausible : distance, angle, ligne de vue, fraîcheur du timestamp, cohérence de phase. Retourne `Result` avec un code d'erreur exploitable. |
+| `CombatResolver.luau` | **L'arbitre de la parade.** Fonction pure (instant d'impact, ouverture de garde, équilibrage) → verdict parade/blocage/coup + liste d'effets. Testable exhaustivement sans partie lancée. |
+| `TuningGuard.luau` | Valide un réglage à chaud : chemin présent dans la liste blanche de `Config/Debug`, valeur dans les bornes. |
 | `RollTable.luau` | Tirage pondéré déterministe (seed injectée) + pity. Testable exhaustivement. |
 | `ProgressionMath.luau` | XP → niveau, gains de stats avec rendements décroissants, bornes. |
 | `TransferGuard.luau` | Règles anti-farm des virements : plafond glissant, cooldown, détection d'aller-retour. |
@@ -139,8 +151,10 @@ implique une entrée dans `THREAT_MODEL.md`) :
 | `SessionService` | Ouverture/fermeture de session joueur, et point d'abonnement unique pour les autres services — évite que chacun connecte son propre `PlayerRemoving` avec un ordre de nettoyage implicite. | — |
 | `DiagnosticsService` | Mesure du délai aller par joueur (base du dimensionnement du rembobinage) et exposition du profiler. | SessionService |
 | `DataService` | ProfileStore : session lock, chargement, migration, autosave, `BindToClose`, kick propre si échec. **Aucun autre service ne touche au datastore.** | — |
-| `CharacterService` | Cycle de vie du personnage : spawn, humanoïde, `Animator`, application des statMods, ragdoll. | DataService |
-| `StateService` | État de combat autoritatif par joueur (HP, endurance, poise, i-frames, état d'anim) + historique de positions (`RingBuffer`) pour la lag comp. | CharacterService |
+| `CharacterService` | Cycle de vie du personnage : spawn, humanoïde, `Animator`, application des statMods, ragdoll. | SessionService |
+| `StateService` | État de combat autoritatif par joueur (`CombatState`, PV, endurance, jauge de garde) + historique de positions (`RingBuffer`). Un unique `Heartbeat` fait expirer les états échus — aucun `task.delay` par joueur. | CharacterService |
+| `DummyService` | Mannequin d'entraînement : spawn, encaissement, remise à zéro, affichage du dernier verdict. | StateService, CombatService |
+| `TuningService` | Copie vivante de l'équilibrage, remote de réglage à chaud, diffusion aux clients, réinitialisation depuis `Config`. | — |
 | `CombatService` | Orchestre attaques/skills : reçoit les demandes, appelle `HitValidator` + `CombatResolver`, applique les effets, réplique le feedback. Ne connaît **aucun** style nommément. | StateService, StyleService |
 | `StyleService` | Possession et roll/reroll de style, résolution `styleId → SkillSpec`, application des statMods. | DataService, EconomyService |
 | `StatsService` | Entraînement (mini-jeu de timing), gains de stats, niveau/XP. | DataService, StateService |
@@ -159,7 +173,9 @@ implique une entrée dans `THREAT_MODEL.md`) :
 | `DiagnosticsController` | Mesure du RTT et de la dérive d'horloge à la connexion, puis à la demande. |
 | `InputController` | Abstraction clavier/gamepad/tactile → actions nommées (`Attack`, `Block`, `Dash`, `Skill1..4`). Seul endroit qui connaît `UserInputService`. |
 | `CombatController` | Prédiction locale : joue l'anim, détecte le hit (`GetPartBoundsInBox` + `OverlapParams`), envoie la demande, réconcilie avec la réponse serveur. |
-| `HitboxDebugController` | Visualisation des hitbox + branchement du `Profiler` (activable en Studio uniquement). |
+| `HitboxDetector` | Ouverture des hitbox (`GetPartBoundsInBox` + `OverlapParams`), filtrage du personnage propre, mesure via `Profiler.record("hitbox", …)`. |
+| `AnimationController` | Joue une entrée de `Config/Animations` ; `id == 0` déclenche le mouvement procédural de même durée. Le reste du code demande `"M1_3"`, jamais un asset id. |
+| `DebugPanelController` | Panneau F2 : état, ressources, écart de prédiction, réglage à chaud, interrupteurs de développement. |
 | `FeedbackController` | Hitstop, shake, VFX, SFX, indicateurs de parry/guard break — la « lisibilité » du combat vit ici. |
 | `CameraController` | Caméra de combat (léger lock-on souple), sensibilité paramétrable. |
 | `UIController` | Monte/démonte les écrans, gère la pile et le focus (important sur mobile). |
@@ -282,7 +298,7 @@ réseau) parry de façon fiable, zéro hit fantôme sur 100 échanges.
 | Phase | Livrable jouable | Sortie |
 |---|---|---|
 | 0 ✅ | Rojo sync, Loader, Net typé, validation de config, lint/format, README | `[Boot/Server] OK` + `[Boot/Client] OK` (voir docs/TESTING.md) |
-| 1 | M1 chain, block, parry, dash, endurance, dummy d'entraînement | duel testable à 2 clients Studio |
+| 1 | M1 chain, block, parry, dash, endurance, dummy d'entraînement — découpage en 7 tranches dans `docs/PHASE1.md` | duel testable à 2 clients Studio, recette à 150 ms |
 | 2 | ProfileStore + migrations, roll/reroll, 3 styles + `Debug_Dummy` | données persistantes, gacha jouable |
 | 3 | Map bloc-out, streaming, spawns, salle de sport + mini-jeu de stats | monde parcourable |
 | 4 | Téléphone, banque, 3 jobs, économie | boucle Yen complète |
@@ -297,6 +313,7 @@ réseau) parry de façon fiable, zéro hit fantôme sur 100 échanges.
 - `docs/DECISIONS.md` — journal des décisions structurantes (append-only).
 - `docs/THREAT_MODEL.md` — un remote = une ligne = une contre-mesure (dès Phase 0).
 - `docs/TESTING.md` — procédure de test dans Studio, par phase.
-- `docs/COMBAT.md` — spécification du combat, dont la réconciliation client/serveur.
+- `docs/COMBAT.md` — spécification du combat : machine à états, réconciliation client/serveur.
+- `docs/PHASE1.md` — conception de la Phase 1 : modules, contrats, panneau F2, ordre de construction.
 - `docs/ANIMATIONS.md` — brief animateur, dérivé de `Config/Balance` et `Config/Animations`.
 - `docs/RELEASE_CHECKLIST.md` — créé en Phase 7.

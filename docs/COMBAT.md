@@ -11,24 +11,143 @@ raison**, et ce document qui doit être corrigé.
 
 ---
 
-## 1. États du personnage
+## 1. Machine à états
 
-Un joueur est à tout instant dans exactement un de ces états, côté serveur :
+### 1.1 Les huit états
 
-| État | Peut attaquer | Peut garder | Peut dasher | Subit les dégâts |
-|---|---|---|---|---|
-| `Neutral` | oui | oui | oui | pleins |
-| `Attacking` | non (sauf enchaînement) | non | pendant la récup. si `cancelable` | pleins |
-| `Blocking` | non | — | oui | × 0,35 |
-| `Parrying` (0,20 s) | non | — | non | annulés |
-| `Dashing` (0,20 s) | non | non | non | annulés pendant 0,12 s |
-| `Stunned` | non | non | non | pleins |
-| `Knocked` | non | non | non | pleins |
-| `Downed` (KO) | non | non | non | — |
+Un joueur est à tout instant dans exactement un état. La parade n'en est
+délibérément **pas** un : c'est une fenêtre à l'intérieur de `Blocking`. En
+faire un état séparé obligerait à décider de son entrée au moment de l'appui,
+donc côté client — exactement ce qu'ADR-002 interdit.
 
-Le client tient une copie de cet état pour l'affichage et la prédiction. **Il
-n'en est jamais la source de vérité** : quand les deux divergent, celui du
-serveur gagne, selon les règles de réconciliation du §5.
+| État | Durée | Peut attaquer | Peut garder | Peut dasher | Dégâts subis |
+|---|---|---|---|---|---|
+| `Idle` | — | oui | oui | oui | pleins |
+| `Attacking` | armé + actif + récup. | seulement en enchaînement | non | en récup. si `cancelable` | pleins |
+| `Blocking` | tant que maintenu | non | — | oui | × 0,35, ou **0 dans la fenêtre de parade** |
+| `Dashing` | 0,20 s | non | non | non | 0 pendant 0,12 s, puis pleins |
+| `Stunned` | 1,2 s (paré) / 1,6 s (garde brisée) | non | non | non | pleins |
+| `Knocked` | 1,1 s | non | non | non | pleins |
+| `GettingUp` | 0,60 s | non | non | non | 0 pendant 0,35 s |
+| `Downed` | jusqu'au respawn | non | non | non | — |
+
+`GettingUp` est séparé de `Knocked` parce que les deux n'ont ni la même
+vulnérabilité ni la même animation : c'est l'invulnérabilité de relevage qui
+empêche le viol de knockdown en boucle.
+
+### 1.2 Le modèle temporel : des échéances, pas des minuteurs
+
+Chaque état porte trois champs de temps, tous sur l'horloge serveur commune :
+
+```
+enteredAt    -- instant d'entrée
+expiresAt    -- instant de sortie automatique (nil si l'état est maintenu)
+windowUntil  -- fin de la sous-fenêtre de l'état (parade, i-frames, invuln.)
+```
+
+Un unique `Heartbeat` dans `StateService` parcourt les joueurs et fait expirer
+ce qui doit l'être. **Aucun `task.delay` par joueur ni par action** : un
+minuteur ne s'annule pas proprement quand un joueur se fait interrompre ou
+quitte la partie, et 30 joueurs en combat produiraient des centaines de tâches
+en vol dont plus personne ne sait à quel état elles se rapportent.
+
+Corollaire utile : l'état est entièrement décrit par des données sérialisables.
+On peut donc l'afficher tel quel dans le panneau F2, le répliquer, et le
+comparer entre client et serveur pour détecter une divergence.
+
+### 1.3 Table de transitions
+
+Les transitions **demandées par le client** doivent satisfaire cette table.
+
+| Depuis | Vers | Déclencheur | Gardes |
+|---|---|---|---|
+| `Idle` | `Attacking` | `Combat.Attack` | endurance suffisante, chaîne à l'index 1 |
+| `Attacking` | `Attacking` | `Combat.Attack` | phase ≠ armé, dans les 0,55 s suivant l'impact précédent, index < longueur de chaîne |
+| `Attacking` | `Idle` | expiration | — |
+| `Attacking` | `Dashing` | `Combat.Dash` | phase == récupération **et** coup `cancelable`, endurance ≥ 18, cooldown écoulé |
+| `Idle` | `Blocking` | `Combat.BlockState{open}` | cooldown de parade (0,55 s) écoulé, endurance ≥ 10 |
+| `Blocking` | `Idle` | `Combat.BlockState{close}` | — |
+| `Blocking` | `Dashing` | `Combat.Dash` | endurance ≥ 18, cooldown écoulé |
+| `Idle` | `Dashing` | `Combat.Dash` | endurance ≥ 18, cooldown écoulé |
+| `Dashing` | `Idle` | expiration | — |
+| `Knocked` | `GettingUp` | expiration | — |
+| `GettingUp` | `Idle` | expiration | — |
+| `Downed` | `Idle` | respawn | — |
+
+**Ce qui est absent de cette table est interdit**, et deux absences sont des
+décisions de design, pas des oublis :
+
+- `Attacking → Blocking` n'existe pas. Si l'on pouvait garder pendant sa
+  récupération, rater un coup ne coûterait rien et la lecture de l'adversaire
+  n'aurait plus de valeur. La récupération est la punition du coup dans le vide.
+- `Blocking → Attacking` n'existe pas directement. Il faut relâcher la garde
+  (`Blocking → Idle → Attacking`), ce qui coûte une frame d'input et empêche le
+  « garde permanente, je lâche uniquement pour frapper » sans aucun risque.
+
+### 1.4 Transitions imposées par le serveur
+
+Elles ne consultent pas la table ci-dessus mais une **priorité**. Une
+transition imposée l'emporte sur l'état courant si sa priorité est strictement
+supérieure :
+
+```
+Downed (5) > Knocked (4) > Stunned (3) > Dashing (2) > Attacking (1) = Blocking (1) > Idle (0)
+```
+
+| Événement serveur | État imposé | Priorité |
+|---|---|---|
+| PV ≤ 0 | `Downed` | 5 |
+| dernier coup de la chaîne encaissé | `Knocked` | 4 |
+| attaque parée par l'adversaire | `Stunned` (1,2 s) | 3 |
+| jauge de garde épuisée | `Stunned` (1,6 s) | 3 |
+
+C'est la règle qui rend la machine sûre : le client ne peut jamais *sortir* d'un
+`Stunned` en demandant une transition, puisque toute demande client passe par la
+table du §1.3, où aucune ligne ne part de `Stunned`.
+
+### 1.5 Diagramme
+
+```
+                        ┌──────────────────────────────────┐
+                        │              Idle                │◀──────────┐
+                        └──┬────────────┬──────────────┬───┘           │
+             Combat.Attack │   BlockState│      Combat.Dash            │
+                           ▼            ▼              ▼               │
+                  ┌────────────┐  ┌──────────┐  ┌────────────┐         │
+       enchaîne   │ Attacking  │  │ Blocking │  │  Dashing   │         │
+      ┌──────────▶│  armé      │  │ ┌──────┐ │  │ i-frames   │         │
+      │           │  actif     │  │ │parade│ │  │  0,12 s    │         │
+      └───────────│  récup. ───┼──┼─┘0,20 s└─┼─▶│            │─────────┤
+                  └─────┬──────┘  └────┬─────┘  └────────────┘         │
+                        │              │                              │
+      ┌─────────────────┴──────────────┴──────────────────────────────┐│
+      │        transitions imposées par le serveur (par priorité)     ││
+      └───┬──────────────────┬──────────────────────┬─────────────────┘│
+          ▼                  ▼                      ▼                  │
+    ┌───────────┐      ┌───────────┐          ┌──────────┐             │
+    │  Stunned  │      │  Knocked  │─────────▶│ GettingUp│─────────────┤
+    │ 1,2/1,6 s │      │   1,1 s   │  expire  │  0,60 s  │   expire    │
+    └─────┬─────┘      └───────────┘          └──────────┘             │
+          │ expire                                                     │
+          └────────────────────────────────────────────────────────────┘
+                                    ┌──────────┐
+              PV ≤ 0 ──────────────▶│  Downed  │──── respawn ──────────▶ Idle
+                                    └──────────┘
+```
+
+### 1.6 La même machine des deux côtés
+
+`Shared/Combat/StateMachine.luau` est **pur et partagé** : le client l'utilise
+pour prédire, le serveur pour arbitrer. Ce n'est pas une commodité, c'est une
+condition de correction — deux implémentations des mêmes règles finissent
+toujours par diverger sur un cas limite, et cette divergence se manifeste comme
+une injustice ressentie par le joueur (« j'ai bien appuyé »).
+
+Le client applique donc les mêmes gardes, avec **une seule différence** : il
+n'applique jamais de transition imposée de sa propre initiative. Un `Stunned`,
+un `Knocked` ou un `Downed` ne peuvent lui arriver que par un message du
+serveur. Quand sa prédiction et l'autorité divergent, c'est le serveur qui
+gagne, selon les règles de réconciliation du §5.
 
 ---
 

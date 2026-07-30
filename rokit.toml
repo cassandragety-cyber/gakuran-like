@@ -2,7 +2,7 @@
 # pour que le lint et le format donnent le même résultat sur toutes les machines
 # et en CI. Ne pas mettre à jour une version sans relancer scripts/check.sh.
 [tools]
-rojo = "rojo-rbx/rojo@7.4.4"
+rojo = "rojo-rbx/rojo@7.7.0"
 wally = "UpliftGames/wally@0.3.2"
 selene = "Kampfkarren/selene@0.28.0"
 stylua = "JohnnyMorganz/StyLua@2.0.2"
