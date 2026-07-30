@@ -11,6 +11,8 @@
 	que le contrat soit lisible d'un seul endroit (cf. docs/THREAT_MODEL.md).
 ]]
 
+local CombatTypes = require(script.Parent.Combat.Types)
+
 -- ==========================================================================
 -- Personnage et progression
 -- ==========================================================================
@@ -106,6 +108,45 @@ export type PingRequest = {
 export type PingReply = {
 	seq: number,
 	serverTime: number,
+}
+
+--[[
+	État autoritatif d'un joueur, poussé par le serveur. Contient tout ce dont le
+	client a besoin pour afficher et, à partir de la tranche 1.2, réconcilier sa
+	prédiction.
+]]
+export type StateSync = {
+	userId: number,
+	state: CombatTypes.CombatState,
+	health: number,
+	stamina: number,
+	guard: number,
+	--[[
+		Les cooldowns font partie de l'état répliqué, pas du confort d'affichage :
+		sans eux le client ne peut pas prédire un refus de dash ou de garde, et
+		afficherait une action possible que le serveur va rejeter.
+	]]
+	dashReadyAt: number,
+	parryReadyAt: number,
+}
+
+--[[
+	Intention de sprint. Le client n'annonce ni sa vitesse ni sa position : le
+	serveur reste seul à écrire `WalkSpeed` et seul à décider si l'endurance
+	permet encore de courir.
+]]
+export type SprintIntent = {
+	active: boolean,
+	clientTime: number,
+}
+
+--[[
+	Réglage à chaud d'une valeur d'équilibrage. `path` est vérifié contre la liste
+	blanche de `Config/Debug`, jamais interprété directement (ADR-013).
+]]
+export type TuningChange = {
+	path: string,
+	value: number,
 }
 
 return {}

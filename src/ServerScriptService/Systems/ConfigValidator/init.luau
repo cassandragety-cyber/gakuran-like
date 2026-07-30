@@ -32,6 +32,7 @@ function ConfigValidator.validate(): Result.Result<true>
 	CombatRules.validateAnimations(problems)
 	ContentRules.validateRateLimits(problems)
 	ContentRules.validateDataStores(problems)
+	ContentRules.validateTunables(problems)
 	ContentRules.validateMonetization(problems)
 
 	if #problems > 0 then

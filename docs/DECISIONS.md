@@ -338,7 +338,7 @@ bien décider quel coup est joué à chaque appui.
 
 **Décision.** La demande `Combat.Attack` contient un numéro de séquence et un
 horodatage, **rien d'autre**. Le serveur dérive l'index de chaîne de l'état qu'il
-détient, via `ComboMachine.nextIndex`. Même logique ailleurs : la direction du
+détient, via `Frames.nextChainIndex`. Même logique ailleurs : la direction du
 dash est un entier de 1 à 4, jamais un `Vector3`.
 
 **Alternative écartée.** Laisser le client envoyer `chainIndex`, ce que le

@@ -23,6 +23,17 @@ local Result = require(ReplicatedStorage.Shared.Result)
 local SCOPE = "Boot/Server"
 local startedAt = os.clock()
 
+--[[
+	Message actionnable plutôt qu'une erreur de require cryptique : à partir de la
+	Phase 1, le nettoyage des connexions de personnage passe par Trove (ADR-008),
+	donc les dépendances Wally deviennent nécessaires.
+]]
+local packages = ReplicatedStorage:FindFirstChild("Packages")
+assert(
+	packages ~= nil and packages:FindFirstChild("Trove") ~= nil,
+	"[Boot/Server] dépendances absentes : lancez `wally install` puis resynchronisez Rojo"
+)
+
 Result.expect(ConfigValidator.validate(), "[Boot/Server] configuration invalide")
 Log.info(SCOPE, "configuration validée")
 

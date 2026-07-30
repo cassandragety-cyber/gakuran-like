@@ -26,6 +26,9 @@ export type MeleeStep = {
 	knockbackSpeed: number,
 	-- Le dernier coup de la chaîne envoie au sol (brief §5.1).
 	knockdown: boolean,
+	-- Si vrai, la récupération peut être annulée par un dash. Le coup final ne
+	-- l'est pas : sa longue récupération est la contrepartie du knockdown.
+	cancelable: boolean,
 }
 
 local Balance = {
@@ -84,6 +87,7 @@ local Balance = {
 			hitstop = 0.05,
 			knockbackSpeed = 6,
 			knockdown = false,
+			cancelable = true,
 		} :: MeleeStep,
 		{
 			windup = 0.10,
@@ -94,6 +98,7 @@ local Balance = {
 			hitstop = 0.05,
 			knockbackSpeed = 6,
 			knockdown = false,
+			cancelable = true,
 		} :: MeleeStep,
 		{
 			windup = 0.15,
@@ -104,6 +109,7 @@ local Balance = {
 			hitstop = 0.06,
 			knockbackSpeed = 9,
 			knockdown = false,
+			cancelable = true,
 		} :: MeleeStep,
 		{
 			windup = 0.20,
@@ -114,6 +120,7 @@ local Balance = {
 			hitstop = 0.08,
 			knockbackSpeed = 14,
 			knockdown = true,
+			cancelable = false,
 		} :: MeleeStep,
 	},
 

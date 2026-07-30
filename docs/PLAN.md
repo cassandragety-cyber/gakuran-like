@@ -72,18 +72,18 @@ avant de proposer un arbitrage de planning.
 | Module | Responsabilité |
 |---|---|
 | `Types.luau` | Toutes les types publiques partagées (profil, style, skill, paquets réseau). Aucun runtime. |
-| `Enums.luau` | Unions de littéraux figées (`CombatState`, `Rarity`, `DamageKind`, `JobId`) + tables gelées associées. |
 | `Loader.luau` | Chargeur générique ~80 lignes : découvre les modules d'un dossier, résout les dépendances déclarées, appelle `Init` puis `Start` en ordre topologique. Utilisé par le serveur (Services) **et** le client (Controllers). |
-| `Trove.luau` (wally) | Nettoyage déterministe. Réexporté via `Shared/Cleanup.luau` pour figer l'API utilisée. |
-| `Signal.luau` (wally) | Événements internes typés côté serveur/client. Jamais utilisé pour traverser le réseau. |
-| `MathUtil.luau` | *(Phase 1)* `lerp`, `clamp`, `approach`, `diminishing(value, k)` — courbe unique de rendements décroissants réutilisée par la progression. |
-| `TableUtil.luau` | `deepFreeze` : gèle `Config/` à l'import. On n'y ajoute une fonction que le jour où un module s'en sert. |
+| `Trove.luau` (wally) | Nettoyage déterministe des connexions et instances créées dynamiquement. |
+| `Signal.luau` (wally) | *(à venir)* Événements internes typés. Jamais utilisé pour traverser le réseau. |
+| `MathUtil.luau` | `lerp`, `inverseLerp`, `roundTo`. Minimal : `math.clamp` et `math.round` existent nativement, on n'ajoute que ce qui manque. |
+| `TableUtil.luau` | `deepFreeze` (gèle `Config/` à l'import), `deepCopy` (construit la table d'équilibrage vivante), `resolvePath` (chemins pointés du réglage à chaud). |
 | `RingBuffer.luau` | Buffer circulaire à taille fixe, générique. Support de l'historique de positions (lag comp) et du profiler. |
 | `TokenBucket.luau` | Rate limiter pur (capacité, refill/s, `tryConsume(now, n)`). Aucune dépendance Roblox → testable. |
 | `Clock.luau` | Temps de référence unique (`workspace:GetServerTimeNow()`), même API sur client et serveur. **Toute logique temporelle de combat passe par ici.** |
 | `Profiler.luau` | Micro-profiler maison : `Profiler.record("hitbox", secondes)`, agrège min/moy/p95/max sur une fenêtre glissante de 240 échantillons. Sans closure ni allocation par appel, pour rester utilisable dans une boucle de combat ; coût d'un test booléen quand désactivé. |
 | `Result.luau` | `Ok(v)` / `Err(code, detail)` — type de retour de toutes les validations serveur, pour ne jamais confondre « refusé » et « erreur ». |
 | `Log.luau` | Logging à niveaux avec préfixe de module, silencieux en prod sauf `warn`/`error`. |
+| `DevAccess.luau` | Qui a droit aux outils de développement : `isEnabled()` décide si ce serveur crée les remotes `devOnly`, `isAllowed(player)` vérifie l'appelant. |
 
 ### 3.1.b `Shared/Combat/` (pur, partagé client **et** serveur — Phase 1)
 
@@ -92,9 +92,10 @@ vers `Config`, `Net` ou un service : tout arrive en argument (ADR-011).
 
 | Module | Responsabilité |
 |---|---|
+| `Types.luau` | `CombatState`, `StateName`, `Phase`, `Snapshot`, `TransitionContext`. Aucun runtime. |
 | `StateMachine.luau` | Les huit états de combat, la table de transitions demandées par le client, les priorités des transitions imposées par le serveur. Voir `docs/COMBAT.md` §1. |
-| `ComboMachine.luau` | Index de chaîne, fenêtre de combo, remise à zéro sur coup dans le vide. |
-| `StaminaModel.luau` | Consommation et régénération de l'endurance selon le tag de combat. |
+| `Frames.luau` | Lecture du frame data (phase courante) et progression de la chaîne d'attaque. |
+| `StaminaModel.luau` | Consommation et régénération de l'endurance selon le tag de combat. Dépense et régénération sont exclusives. |
 
 ### 3.2 `Config/` (data pure, gelée au boot, **zéro logique**)
 
@@ -107,7 +108,8 @@ vers `Config`, `Net` ou un service : tout arrive en argument (ADR-011).
 | `DataStores.luau` | Noms de DataStore/MemoryStore, versionnés (`Banchou_<Nom>_v<N>`), et version du schéma de profil. |
 | `Monetization.luau` | Table des gamepasses et dev products (id, nom, prix suggéré, effet déclaratif). |
 | `RateLimits.luau` | Un bucket (capacité, refill) par remote, indexé par le même id que `Net/Definitions`. |
-| `Debug.luau` | *(Phase 1)* Liste blanche des valeurs réglables à chaud avec leurs bornes, liste des UserId administrateurs, interrupteurs de développement. |
+| `Debug.luau` | Liste blanche des valeurs réglables à chaud avec leurs bornes, liste des UserId administrateurs, interrupteurs de développement. |
+| `Input.luau` | Correspondance touches → actions nommées, par périphérique. Base des keybinds personnalisables. |
 | `Styles/init.luau` | Agrège et gèle tous les styles ; valide le schéma au boot (crash explicite si un style est malformé). |
 | `Styles/Rarity.luau` | Table de raretés (poids 60/25/10/4/1) + configuration du pity. |
 | `Styles/<Id>.luau` | Un fichier par style : `{ id, name, rarity, weight, statMods, skills, animPack, vfxPack }`. |
@@ -121,7 +123,9 @@ vers `Config`, `Net` ou un service : tout arrive en argument (ADR-011).
 |---|---|
 | `Definitions.luau` | **Le contrat réseau.** Pour chaque remote : id, direction, bucket de rate-limit, et un `parse` typé qui **reconstruit** le payload au lieu de le laisser passer. |
 | `init.luau` | Runtime : crée les `RemoteEvent` d'après `Definitions`, expose une API typée (`Net.Server.on(def, handler)`, `Net.Client.fire(def, payload)`), applique la chaîne middleware **rate-limit → parsing strict → handler**. Un payload invalide n'atteint jamais un service. Pas de `RemoteFunction` : un appel client→serveur qui yield est une attente que le client contrôle. |
+| `Parsers.luau` | Reconstruction des payloads. Séparé de `Definitions` pour que le contrat réseau reste lisible d'un coup d'œil. |
 | `Middleware.luau` | Les middlewares eux-mêmes (bucket, shape check, journalisation d'abus, kick soft). |
+| `LatencySim.luau` | Latence simulée côté serveur, en file **FIFO** : un simulateur qui réordonne les paquets fabrique des bugs inexistants. |
 
 Remotes prévus (liste figée en Phase 0, complétée par phase — chaque ajout
 implique une entrée dans `THREAT_MODEL.md`) :
@@ -161,6 +165,7 @@ implique une entrée dans `THREAT_MODEL.md`) :
 | `EconomyService` | Yen : crédit/débit, virements (via `TransferGuard`), paies de jobs. Seule porte d'entrée de la monnaie. | DataService |
 | `JobService` | Boucles de métiers (livraison, konbini, flyers) : état de mission, validation des étapes, paiement via EconomyService. | EconomyService, DataService |
 | `GangService` | Crews : création, invitations, rôles ; partage cross-server léger via `MemoryStoreService`. | DataService |
+| `MovementService` | Vitesse de déplacement autoritative : le serveur seul écrit `WalkSpeed`. | CharacterService, StateService |
 | `MonetizationService` | Gamepasses et dev products : `ProcessReceipt` idempotent, application des effets déclarés dans `Config/Monetization`. | DataService, StyleService |
 | `AnalyticsService` | Événements maison bufferisés puis flush (`session_start`, `first_fight`, `style_rolled`, `purchase`, D1). | DataService |
 | `AntiCheatService` | Surveillance transverse : vitesse, téléportation, abus de remotes signalés par le middleware ; escalade log → throttle → kick. | StateService |
@@ -171,6 +176,9 @@ implique une entrée dans `THREAT_MODEL.md`) :
 | Controller | Responsabilité |
 |---|---|
 | `DiagnosticsController` | Mesure du RTT et de la dérive d'horloge à la connexion, puis à la demande. |
+| `TuningController` | Copie cliente de l'équilibrage, tenue à jour par `Debug.TuningSync`. Sans elle, la prédiction dériverait de l'autorité dès qu'un curseur bouge. |
+| `StateMirrorController` | Miroir de l'état autoritatif ; accueillera la prédiction locale et l'écart de prédiction. |
+| `MovementController` | Intention de sprint, envoyée seulement quand elle change. |
 | `InputController` | Abstraction clavier/gamepad/tactile → actions nommées (`Attack`, `Block`, `Dash`, `Skill1..4`). Seul endroit qui connaît `UserInputService`. |
 | `CombatController` | Prédiction locale : joue l'anim, détecte le hit (`GetPartBoundsInBox` + `OverlapParams`), envoie la demande, réconcilie avec la réponse serveur. |
 | `HitboxDetector` | Ouverture des hitbox (`GetPartBoundsInBox` + `OverlapParams`), filtrage du personnage propre, mesure via `Profiler.record("hitbox", …)`. |
@@ -189,6 +197,11 @@ implique une entrée dans `THREAT_MODEL.md`) :
 Un dossier par écran (`HUD/`, `Phone/`, `StyleRoll/`, `Training/`, `Shop/`,
 `Gang/`), plus `UI/Components/` (bouton, liste, modale, jauge) et
 `UI/Theme.luau` (couleurs, marges, tailles tactiles minimales 44px).
+
+Livré : `UI/Theme.luau`, et `UI/Debug/` — `Panel` (châssis, sections, défilement),
+`Row` (ligne libellé/valeur), `Slider` (curseur + saisie), `Readouts` (ce que le
+panneau affiche, décrit en données pour qu'ajouter un indicateur soit une entrée
+de table).
 
 ---
 

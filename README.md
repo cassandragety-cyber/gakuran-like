@@ -9,8 +9,9 @@ Documentation : [PLAN](docs/PLAN.md) · [DÉCISIONS](docs/DECISIONS.md) ·
 [COMBAT](docs/COMBAT.md) · [ANIMATIONS](docs/ANIMATIONS.md) ·
 [MODÈLE DE MENACE](docs/THREAT_MODEL.md) · [TESTS](docs/TESTING.md)
 
-**État : Phase 0 terminée** (outillage, chargeur de services, couche réseau
-typée, validation de configuration). Le combat arrive en Phase 1.
+**État : tranche 1.1 terminée** — état de combat autoritatif, machine à états à
+huit états, sprint, réglage à chaud et panneau de debug F2. Le chain d'attaque
+arrive en tranche 1.2. Découpage complet dans [PHASE1.md](docs/PHASE1.md).
 
 ---
 
@@ -32,9 +33,10 @@ selene generate-roblox-std   # génère roblox.toml, le std de lint (non commit�
 rojo sourcemap default.project.json -o sourcemap.json   # types dans l'éditeur
 ```
 
-`wally install` est facultatif tant qu'on est en Phase 0 : aucun module n'y fait
-appel pour l'instant (cf. ADR-008), le dossier `Packages/` doit simplement
-exister — il est déjà là.
+`wally install` est **nécessaire** depuis la tranche 1.1 : le nettoyage des
+connexions de personnage passe par Trove. Le serveur refuse de démarrer avec un
+message explicite si les dépendances manquent, plutôt que d'échouer sur une erreur
+de `require` illisible.
 
 ## Développer
 
@@ -90,6 +92,7 @@ Formater automatiquement : `stylua src/`.
 src/
 ├── ReplicatedStorage/
 │   ├── Shared/   modules purs, réutilisables des deux côtés
+│   │   └── Combat/  règles appliquées à l'identique par le client et le serveur
 │   ├── Config/   données d'équilibrage — aucune logique
 │   └── Net/      contrat réseau typé + middleware
 ├── ServerScriptService/
@@ -110,4 +113,7 @@ src/
 - **Aucun remote hors de `Net/Definitions`.** Chaque remote a une limite de
   cadence et une ligne dans [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 - Pas de `while true do wait()` : `RunService` avec accumulateur, ou `task.delay`.
+- **Aucun module de combat ne lit `Config` au runtime** : la table d'équilibrage
+  arrive en argument (ADR-011). C'est ce qui rend la logique testable avec des
+  valeurs fabriquées et réglable à chaud sans invalidation à propager.
 - Les commentaires expliquent *pourquoi*, jamais *quoi*.

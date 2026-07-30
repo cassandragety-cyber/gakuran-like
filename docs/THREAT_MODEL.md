@@ -48,6 +48,34 @@ trop fréquent*, jamais qu'il est *légitime*.
 | **Surface d'attaque** | Nulle dans ce sens : un client ne peut pas déclencher un remote serveur → client. Le payload est tout de même reparsé côté client, non par méfiance envers le serveur mais pour que le handler reçoive un type garanti. |
 | **Ce qui est délibérément absent** | Aucune donnée d'un autre joueur n'y transite. Règle générale : ce qu'on n'envoie pas au client ne peut pas être lu par un exploiteur. |
 
+### `Move.SprintState` — client → serveur
+
+| | |
+|---|---|
+| **Payload** | `{ active: boolean, clientTime: nombre fini }` |
+| **Cadence** | 6 en rafale, 3/s soutenu |
+| **Ce que tenterait un exploiteur** | (a) sprinter en permanence sans payer l'endurance ; (b) alterner très vite pour saturer le serveur ; (c) envoyer un `clientTime` faux pour paraître en avance. |
+| **Contre-mesure** | (a) le payload ne contient **aucune vitesse** — le serveur seul écrit `WalkSpeed`, et `StaminaModel.canSprint` coupe le sprint sous le seuil d'action, à chaque frame, quoi qu'ait envoyé le client ; (b) token bucket ; (c) `clientTime` ne sert qu'à journaliser une dérive d'horloge, aucune décision ne s'y appuie. |
+| **Risque résiduel** | Aucun sur le gameplay : refuser le message revient à ne pas sprinter. |
+
+### `Combat.StateSync` — serveur → client
+
+| | |
+|---|---|
+| **Payload** | `{ userId, state: CombatState, health, stamina, guard, dashReadyAt, parryReadyAt }` |
+| **Surface d'attaque** | Nulle dans ce sens. Le payload est reparsé côté client pour garantir un type au handler, et le nom d'état est vérifié contre la liste des huit états connus. |
+| **Ce qui est délibérément absent** | En tranche 1.1 l'état n'est envoyé qu'à son **propriétaire**. Quand les joueurs proches en auront besoin (tranche 1.3), on n'enverra que ce qui sert au retour visuel — jamais les cooldowns d'autrui, qui donneraient à un exploiteur la lecture parfaite de l'adversaire. |
+
+### `Debug.SetTuning` / `Debug.TuningSync` — développement uniquement
+
+| | |
+|---|---|
+| **Payload** | `{ path: string, value: nombre fini }` |
+| **Existence** | `devOnly` : les instances **ne sont pas créées** hors Studio et hors `Config/Debug.AdminUserIds` (ADR-013). Le boot journalise les remotes non instanciés. |
+| **Ce que tenterait un exploiteur** | Réécrire la fenêtre de parade, les dégâts, la portée. C'est le remote le plus dangereux du projet. |
+| **Contre-mesure** | Trois couches : le remote n'existe pas en production ; `DevAccess.isAllowed` vérifie l'appelant à chaque appel ; `TuningGuard` n'accepte que les chemins de la liste blanche de `Config/Debug` et borne la valeur. La troisième couche existe pour le cas où un compte administrateur serait compromis : elle borne les dégâts au lieu de faire confiance à une identité. |
+| **Ce qui est hors liste blanche** | Les durées d'animation. Les régler à chaud casserait le contrat vérifié au boot entre `Animations` et `Balance` (ADR-009). |
+
 ---
 
 ## 3. Remotes prévus et leur risque anticipé
@@ -57,11 +85,10 @@ contre-mesure soit conçue avant le remote, et non ajoutée après.
 
 | Remote | Phase | Risque principal | Contre-mesure prévue |
 |---|---|---|---|
-| `Combat.Attack` `{seq, clientTime}` | 1 | Rafale d'attaques sans respecter cooldowns ni endurance ; réclamer directement le 4e coup pour un knockdown à la demande | Cadence 8/4-s ; l'index de chaîne est **dérivé** par `ComboMachine` de l'état serveur et n'est pas dans le payload ; endurance et transition validées par `StateMachine.canRequest` |
+| `Combat.Attack` `{seq, clientTime}` | 1 | Rafale d'attaques sans respecter cooldowns ni endurance ; réclamer directement le 4e coup pour un knockdown à la demande | Cadence 8/4-s ; l'index de chaîne est **dérivé** par `Frames.nextChainIndex` de l'état serveur et n'est pas dans le payload ; endurance et transition validées par `StateMachine.canRequest` |
 | `Combat.HitReport` `{seq, clientTime, targets}` | 1 | Déclarer des cibles hors de portée, à travers un mur, dans le dos, ou tout le serveur d'un coup ; rejouer le même swing | `Rewind` borné à 0,25 s puis `HitValidator` : distance, `FacingDot`, ligne de vue, fraîcheur d'horodatage, phase active cohérente, `AlreadyHitThisSwing` ; liste plafonnée à `MaxTargetsPerSwing` |
 | `Combat.BlockState` `{open, clientTime}` | 1 | Antidater l'ouverture de garde pour parer rétroactivement ; maintenir une fenêtre de parade ouverte en permanence | Horodatage comparé à l'horloge serveur, tolérance 0,12 s ; fenêtre de 0,20 s calculée serveur ; cooldown de 0,55 s entre deux ouvertures ; le client ne déclare jamais « j'ai paré » (ADR-002) |
 | `Combat.Dash` `{direction 1..4, clientTime}` | 1 | Dash sans coût, i-frames permanentes, ou déplacement arbitraire | Direction bornée à un entier de 1 à 4 — jamais un vecteur ; cooldown et endurance serveur ; l'invulnérabilité est une propriété d'état serveur, pas un message |
-| `Debug.SetTuning` `{path, value}` | 1 | **Réécrire l'équilibrage** : dégâts, fenêtres de parade | `devOnly` — le remote n'existe pas en production ; `TuningGuard` applique une liste blanche de chemins avec bornes, donc même un compte administrateur compromis reste borné ; les durées d'animation sont hors liste blanche pour ne pas casser le contrat du boot (ADR-009) |
 | `Style.Reroll` | 2 | Rerouler sans payer, ou rejouer un tirage jusqu'au Mythic | Le tirage est effectué serveur, le débit précède le tirage, le résultat n'est communiqué qu'une fois écrit dans le profil |
 | `Economy.Transfer` | 4 | Duplication de monnaie, blanchiment entre comptes complices | Débit et crédit dans la même transaction serveur ; `Systems/TransferGuard` applique plafond glissant, cooldown et détection d'aller-retour |
 | `Economy.JobAction` | 4 | Valider les étapes d'un métier sans les accomplir | Chaque étape a une condition vérifiable serveur (position, temps écoulé, ordre) ; la paie est calculée serveur |
@@ -75,4 +102,5 @@ contre-mesure soit conçue avant le remote, et non ajoutée après.
 | Date | Phase | Modification |
 |---|---|---|
 | Phase 0 | 0 | Création. Deux remotes de diagnostic déclarés ; principes généraux et surface anticipée posés. |
+| Tranche 1.1 | 1 | `Move.SprintState`, `Combat.StateSync`, `Debug.SetTuning`, `Debug.TuningSync` implémentés et documentés. Mécanisme `devOnly` en service. |
 | Phase 1 (conception) | 1 | Ajout de deux principes (ne pas demander ce qu'on peut déduire, `devOnly` non instancié en production). Payloads de combat figés et contre-mesures détaillées avant implémentation. |

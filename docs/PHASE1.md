@@ -54,8 +54,8 @@ limite, et cette divergence se manifeste au joueur comme une injustice.
 | Module | Responsabilité | Signatures principales |
 |---|---|---|
 | `StateMachine.luau` | Les huit états, la table de transitions, les priorités. Ne connaît ni le réseau ni les personnages. | `phaseOf(state, now, balance): Phase?`<br>`canRequest(state, target, context): Result<true>`<br>`enter(state, target, context): CombatState`<br>`impose(state, target, duration, now): CombatState`<br>`expire(state, now): CombatState?`<br>`priorityOf(name): number` |
-| `ComboMachine.luau` | Index de chaîne, fenêtre de combo, reset sur coup dans le vide. | `nextIndex(state, now, balance): number?`<br>`stepFor(index, balance): MeleeStep` |
-| `StaminaModel.luau` | Consommation et régénération selon le tag de combat. | `regenerate(stamina, now, dt, balance): number`<br>`canAfford(stamina, cost, balance): boolean`<br>`spend(stamina, cost): number` |
+| `Frames.luau` | Lecture du frame data et progression de la chaîne. Séparé de `StateMachine` parce que ce sont deux questions : la machine décide de la *légalité* d'une transition, `Frames` décide d'*où on en est* dans un coup. | `phaseOf(state, now, balance): Phase?`<br>`stepFor(index, balance): MeleeStep?`<br>`nextChainIndex(state, now, balance): number`<br>`canChain(state, context): Result<true>` |
+| `StaminaModel.luau` | Consommation et régénération selon le tag de combat. | `step(stamina, now, dt, drainPerSecond, balance): number`<br>`canAfford(stamina, cost): boolean`<br>`spend(stamina, cost): number`<br>`canSprint(stamina, balance): boolean` |
 
 `CombatState` est **entièrement sérialisable** — pas de référence d'instance, pas
 de closure :
@@ -67,7 +67,7 @@ export type CombatState = {
     expiresAt: number?,     -- nil si l'état est maintenu (Blocking)
     windowUntil: number?,   -- fin de fenêtre de parade / i-frames / invulnérabilité
     chainIndex: number,     -- 0 hors chaîne
-    lastImpactAt: number?,  -- base du calcul de la fenêtre de combo
+    chainDeadline: number?, -- instant au-delà duquel la chaîne repart au coup 1
 }
 ```
 
@@ -160,6 +160,7 @@ d'être explicites :
 
 | Remote | Sens | Payload | Cadence |
 |---|---|---|---|
+| `Move.SprintState` | C→S | `{ active: boolean, clientTime }` | 6 rafale, 3/s |
 | `Combat.Attack` | C→S | `{ seq, clientTime }` | 8 rafale, 4/s |
 | `Combat.HitReport` | C→S | `{ seq, clientTime, targets: {Player} }` (≤ `MaxTargetsPerSwing`) | 8 rafale, 4/s |
 | `Combat.BlockState` | C→S | `{ open: boolean, clientTime }` | 6 rafale, 3/s |
@@ -258,8 +259,8 @@ Chaque tranche est jouable et testable à sa livraison, avec sa procédure ajout
 
 | # | Contenu | Critère d'acceptation |
 |---|---|---|
-| **1.1** | `CharacterService`, `StateService`, `StateMachine`, `StaminaModel`, `TuningService`, panneau F2 en lecture seule + réglage | On voit son état, son endurance et ses échéances changer à l'écran ; on modifie `Dash.Distance` au curseur et la valeur se propage au serveur. **Le panneau arrive en premier parce que tout le reste se règle avec.** |
-| **1.2** | `Combat.Attack` + `HitReport`, `ComboMachine`, `HitboxDetector`, `Rewind`, `HitValidator`, `DummyService` | La chaîne de 4 coups s'enchaîne dans la fenêtre de 0,55 s ; le mannequin perd les PV de `Balance.Melee` ; un coup à travers un mur ou dans le dos est refusé avec son code d'erreur. |
+| **1.1** ✅ | `CharacterService`, `StateService`, `MovementService`, `StateMachine`, `Frames`, `StaminaModel`, `TuningService`, sprint, panneau F2 complet, latence simulée | Livré. Voir `docs/TESTING.md` §1.1. **Le panneau arrive en premier parce que tout le reste se règle avec.** |
+| **1.2** | `Combat.Attack` + `HitReport`, `HitboxDetector`, `Rewind`, `HitValidator`, `DummyService` | La chaîne de 4 coups s'enchaîne dans la fenêtre de 0,55 s ; le mannequin perd les PV de `Balance.Melee` ; un coup à travers un mur ou dans le dos est refusé avec son code d'erreur. |
 | **1.3** | Garde, jauge, guard break, `CombatResolver` (branches `Blocked` / `Hit`) | 35 % des dégâts en garde ; la jauge se vide, le guard break impose 1,6 s de `Stunned` ; la garde ne s'ouvre pas depuis la récupération d'une attaque. |
 | **1.4** | **Parade** : branche `Parried`, arbitrage horodaté, retour en deux temps, les quatre cas de réconciliation, les interrupteurs de dev | Les quatre cas de COMBAT.md §5 se déclenchent à volonté et **aucun** ne produit d'animation contredite en cours de lecture. Tests exhaustifs de `CombatResolver.resolve` sur la frontière de fenêtre. **Tranche la plus longue de la phase.** |
 | **1.5** | Dash, i-frames, annulation de récupération, coûts d'endurance | Le dash annule une récupération `cancelable` mais jamais un armé ; les i-frames couvrent 0,12 s à partir du départ ; à moins de 10 d'endurance, refus. |

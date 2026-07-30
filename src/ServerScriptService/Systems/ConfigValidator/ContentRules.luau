@@ -11,11 +11,14 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Balance = require(ReplicatedStorage.Config.Balance)
 local Check = require(script.Parent.Check)
 local DataStores = require(ReplicatedStorage.Config.DataStores)
+local DebugConfig = require(ReplicatedStorage.Config.Debug)
 local Monetization = require(ReplicatedStorage.Config.Monetization)
 local Rarity = require(ReplicatedStorage.Config.Styles.Rarity)
 local RateLimits = require(ReplicatedStorage.Config.RateLimits)
+local TableUtil = require(ReplicatedStorage.Shared.TableUtil)
 
 local check = Check.check
 local isPositive = Check.isPositive
@@ -128,6 +131,60 @@ function M.validateDataStores(problems: { string })
 		DataStores.ProfileSchemaVersion >= 1 and DataStores.ProfileSchemaVersion % 1 == 0,
 		"DataStores.ProfileSchemaVersion doit être un entier >= 1"
 	)
+end
+
+--[[
+	La liste blanche de réglage à chaud doit décrire des chemins qui existent
+	vraiment. Sans ce contrôle, une faute de frappe produirait un curseur inerte
+	dans le panneau — un bug qu'on ne remarque qu'en cherchant pourquoi le
+	réglage « ne marche pas ».
+]]
+function M.validateTunables(problems: { string })
+	local balance = (Balance :: any) :: { [any]: any }
+
+	for path, tunable in DebugConfig.Tunables do
+		local label = `Config/Debug.Tunables["{path}"]`
+		check(problems, tunable.min < tunable.max, `{label} : min doit être < max`)
+		check(problems, isPositive(tunable.step), `{label} : step doit être > 0`)
+		check(problems, #tunable.label > 0, `{label} : libellé vide`)
+
+		if tunable.target == "Switch" then
+			local default = tunable.default
+			check(
+				problems,
+				default ~= nil,
+				`{label} : un interrupteur doit porter une valeur par défaut`
+			)
+			if default ~= nil then
+				check(
+					problems,
+					default >= tunable.min and default <= tunable.max,
+					`{label} : default {default} hors bornes [{tunable.min}, {tunable.max}]`
+				)
+			end
+			continue
+		end
+
+		local container, key = TableUtil.resolvePath(balance, path)
+		if container == nil then
+			table.insert(problems, `{label} : le chemin ne résout pas dans Config/Balance`)
+			continue
+		end
+
+		local value = container[key]
+		if type(value) ~= "number" then
+			table.insert(problems, `{label} : le chemin ne désigne pas un nombre`)
+			continue
+		end
+
+		-- Une valeur d'équilibrage hors des bornes de son propre curseur serait
+		-- silencieusement écrasée à la première ouverture du panneau.
+		check(
+			problems,
+			value >= tunable.min and value <= tunable.max,
+			`{label} : la valeur courante {value} est hors bornes [{tunable.min}, {tunable.max}]`
+		)
+	end
 end
 
 --[[

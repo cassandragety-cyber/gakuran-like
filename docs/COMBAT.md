@@ -40,10 +40,20 @@ empêche le viol de knockdown en boucle.
 Chaque état porte trois champs de temps, tous sur l'horloge serveur commune :
 
 ```
-enteredAt    -- instant d'entrée
-expiresAt    -- instant de sortie automatique (nil si l'état est maintenu)
-windowUntil  -- fin de la sous-fenêtre de l'état (parade, i-frames, invuln.)
+enteredAt      -- instant d'entrée
+expiresAt      -- instant de sortie automatique (nil si l'état est maintenu)
+windowUntil    -- fin de la sous-fenêtre de l'état (parade, i-frames, invuln.)
+chainIndex     -- coup courant de la chaîne, 0 hors chaîne
+chainDeadline  -- instant au-delà duquel la chaîne repart au premier coup
 ```
+
+`chainDeadline` remplace l'idée initiale d'un « instant du dernier impact ». Il
+est posé quand un coup se **résout** : à `impact + ComboWindow` s'il a touché, à
+`fin du coup + WhiffResetDelay` s'il est parti dans le vide. Il reste `nil`
+pendant le coup en cours, ce qui autorise volontairement le joueur à enchaîner en
+anticipant l'impact — c'est ce qui donne au chain sa fluidité au doigt sur
+mobile. Un seul champ décrit ainsi les deux règles (fenêtre de combo et reset sur
+coup manqué) au lieu de deux à tenir cohérents.
 
 Un unique `Heartbeat` dans `StateService` parcourt les joueurs et fait expirer
 ce qui doit l'être. **Aucun `task.delay` par joueur ni par action** : un

@@ -19,6 +19,7 @@
 	Le point 1 est vérifié au boot par Net.initServer().
 ]]
 
+local Parsers = require(script.Parent.Parsers)
 local Types = require(script.Parent.Parent.Shared.Types)
 
 export type Direction = "ClientToServer" | "ServerToClient"
@@ -29,69 +30,18 @@ export type Definition<T> = {
 	-- Clé dans Config/RateLimits.
 	rateLimit: string,
 	parse: (value: unknown) -> T?,
+	--[[
+		Un remote `devOnly` n'est PAS instancié quand le serveur n'est ni en
+		Studio ni doté d'administrateurs déclarés (ADR-013). Il ne suffit pas de
+		rejeter les appels : un remote absent de l'arbre n'offre aucune surface,
+		et aucune régression de logique ne peut le rouvrir.
+	]]
+	devOnly: boolean?,
 }
 
 -- Version effacée, pour les traitements génériques (création des instances,
 -- itération au boot). Le `any` est confiné ici et ne fuit pas vers les handlers.
 export type AnyDefinition = Definition<any>
-
---[[
-	Un entier fini dans une plage donnée. Rejette NaN, l'infini et les
-	flottants — la plupart des payloads de gameplay sont des compteurs, et
-	accepter 1.9999 quelque part finit toujours par produire un `nil` d'index.
-]]
-local function parseInteger(value: unknown, minimum: number, maximum: number): number?
-	if type(value) ~= "number" then
-		return nil
-	end
-	if value ~= value or value == math.huge or value == -math.huge then
-		return nil
-	end
-	if value % 1 ~= 0 or value < minimum or value > maximum then
-		return nil
-	end
-	return value
-end
-
-local function parseFiniteNumber(value: unknown): number?
-	if type(value) ~= "number" then
-		return nil
-	end
-	if value ~= value or value == math.huge or value == -math.huge then
-		return nil
-	end
-	return value
-end
-
-local function parsePingRequest(value: unknown): Types.PingRequest?
-	if type(value) ~= "table" then
-		return nil
-	end
-	local raw = value :: { [string]: unknown }
-
-	local seq = parseInteger(raw.seq, 0, 1e6)
-	local clientTime = parseFiniteNumber(raw.clientTime)
-	if seq == nil or clientTime == nil then
-		return nil
-	end
-
-	return { seq = seq, clientTime = clientTime }
-end
-
-local function parsePingReply(value: unknown): Types.PingReply?
-	if type(value) ~= "table" then
-		return nil
-	end
-	local raw = value :: { [string]: unknown }
-
-	local seq = parseInteger(raw.seq, 0, 1e6)
-	local serverTime = parseFiniteNumber(raw.serverTime)
-	if seq == nil or serverTime == nil then
-		return nil
-	end
-
-	return { seq = seq, serverTime = serverTime }
-end
 
 local Definitions = {}
 
@@ -104,20 +54,59 @@ Definitions.SystemPingRequest = {
 	id = "System.PingRequest",
 	direction = "ClientToServer",
 	rateLimit = "SystemPing",
-	parse = parsePingRequest,
+	parse = Parsers.parsePingRequest,
 } :: Definition<Types.PingRequest>
 
 Definitions.SystemPingReply = {
 	id = "System.PingReply",
 	direction = "ServerToClient",
 	rateLimit = "SystemPing",
-	parse = parsePingReply,
+	parse = Parsers.parsePingReply,
 } :: Definition<Types.PingReply>
+
+--[[
+	État autoritatif d'un joueur. Le serveur l'envoie sur changement discret
+	(pour que le client réagisse dans la frame) et à cadence réduite pour les
+	valeurs continues.
+]]
+Definitions.CombatStateSync = {
+	id = "Combat.StateSync",
+	direction = "ServerToClient",
+	rateLimit = "CombatStateSync",
+	parse = Parsers.parseStateSync,
+} :: Definition<Types.StateSync>
+
+Definitions.MoveSprintState = {
+	id = "Move.SprintState",
+	direction = "ClientToServer",
+	rateLimit = "MoveSprint",
+	parse = Parsers.parseSprintIntent,
+} :: Definition<Types.SprintIntent>
+
+Definitions.DebugSetTuning = {
+	id = "Debug.SetTuning",
+	direction = "ClientToServer",
+	rateLimit = "DebugTuning",
+	parse = Parsers.parseTuningChange,
+	devOnly = true,
+} :: Definition<Types.TuningChange>
+
+Definitions.DebugTuningSync = {
+	id = "Debug.TuningSync",
+	direction = "ServerToClient",
+	rateLimit = "DebugTuning",
+	parse = Parsers.parseTuningChange,
+	devOnly = true,
+} :: Definition<Types.TuningChange>
 
 -- Liste itérable, construite à la main pour rester ordonnée et explicite.
 Definitions.List = {
 	Definitions.SystemPingRequest :: AnyDefinition,
 	Definitions.SystemPingReply :: AnyDefinition,
+	Definitions.CombatStateSync :: AnyDefinition,
+	Definitions.MoveSprintState :: AnyDefinition,
+	Definitions.DebugSetTuning :: AnyDefinition,
+	Definitions.DebugTuningSync :: AnyDefinition,
 }
 
 return Definitions

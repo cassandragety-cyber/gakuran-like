@@ -85,9 +85,14 @@ end
 function SessionService.Init()
 	Players.PlayerAdded:Connect(begin)
 	Players.PlayerRemoving:Connect(finish)
+end
 
-	-- Un joueur peut avoir rejoint pendant le chargement des scripts serveur ;
-	-- sans ce rattrapage, il n'aurait jamais de session.
+--[[
+	Rattrapage dans Start et non dans Init : ouvrir une session émet `onStarted`,
+	et les abonnés s'inscrivent pendant leur propre Init. Rattraper trop tôt
+	notifierait des sessions à personne.
+]]
+function SessionService.Start()
 	for _, player in Players:GetPlayers() do
 		begin(player)
 	end
