@@ -5,29 +5,32 @@
 
 	Ne contient **aucune valeur numérique de gameplay** : tout vient de la table
 	d'équilibrage vivante. Ne contient non plus aucune règle — les règles sont
-	dans `Shared/Combat` (partagées avec le client) et dans `Systems` (autorité).
-	Ce fichier ne fait que l'enchaînement, dans le bon ordre, avec les bons refus.
+	dans `Shared/Combat` (partagées avec le client), dans `Systems` (autorité) et
+	dans `Claim` (« ce contact a-t-il eu lieu ? »). Ce fichier ne fait que
+	l'enchaînement, dans le bon ordre, avec les bons refus.
 
 	Le point le moins évident : la phase du coup est évaluée à l'instant
 	REVENDIQUÉ par le client, pas à la réception. À 150 ms de latence, l'état
 	courant de l'attaquant est déjà sorti de la phase active quand son rapport
 	arrive ; valider contre le présent rejetterait des coups honnêtes. D'où
 	`Combatant.lastSwing`, qui survit au retour à `Idle`.
+
+	Le corollaire, oublié en tranche 1.2 et payé par un refus systématique : cette
+	trace doit aussi être DATÉE sur l'horloge du client. Instant revendiqué et
+	instant de départ doivent venir de la même horloge, sinon la fenêtre active se
+	décale de la latence montante et aucun coup ne tombe dedans (ADR-017).
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local BalanceConfig = require(ReplicatedStorage.Config.Balance)
+local Claim = require(script.Claim)
 local Clock = require(ReplicatedStorage.Shared.Clock)
 local CombatResolver = require(script.Parent.Parent.Systems.CombatResolver)
-local CombatTypes = require(ReplicatedStorage.Shared.Combat.Types)
 local Definitions = require(ReplicatedStorage.Net.Definitions)
-local Frames = require(ReplicatedStorage.Shared.Combat.Frames)
 local HitValidator = require(script.Parent.Parent.Systems.HitValidator)
 local Log = require(ReplicatedStorage.Shared.Log)
 local Net = require(ReplicatedStorage.Net)
 local Profiler = require(ReplicatedStorage.Shared.Profiler)
-local Rewind = require(script.Parent.Parent.Systems.Rewind)
 local StateService = require(script.Parent.StateService)
 local TuningService = require(script.Parent.TuningService)
 
@@ -39,95 +42,6 @@ CombatService.Dependencies = { "StateService", "TuningService" }
 
 local function refuse(player: Player, seq: number, code: string)
 	Net.Server.fire(Definitions.CombatRefusal, player, { seq = seq, code = code })
-end
-
---[[
-	Phase du coup à un instant donné, calculée depuis la trace du coup et non
-	depuis l'état courant. Retourne nil si l'instant précède le début du coup.
-]]
-local function phaseAt(
-	swing: StateService.Swing,
-	at: number,
-	balance: BalanceConfig.Balance
-): CombatTypes.Phase?
-	local step = balance.Melee[swing.index]
-	if step == nil then
-		return nil
-	end
-
-	local elapsed = at - swing.startedAt
-	if elapsed < 0 then
-		return nil
-	elseif elapsed < step.windup then
-		return "Windup"
-	elseif elapsed < step.windup + step.active then
-		return "Active"
-	end
-	return "Recovery"
-end
-
---[[
-	Ligne de vue. Injectée dans HitValidator plutôt qu'appelée depuis lui : le
-	raycast est la seule opération Roblox de la chaîne de validation, et l'isoler
-	garde le validateur testable hors moteur.
-]]
-local function lineOfSightBetween(attacker: Model, target: Model): (Vector3, Vector3) -> boolean
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { attacker, target }
-	params.IgnoreWater = true
-
-	return function(from: Vector3, to: Vector3): boolean
-		local direction = to - from
-		if direction.Magnitude < 1e-3 then
-			return true
-		end
-		return workspace:Raycast(from, direction, params) == nil
-	end
-end
-
-local function resolveHit(
-	attacker: StateService.Combatant,
-	target: StateService.Combatant,
-	swing: StateService.Swing,
-	clientTime: number,
-	now: number
-): (string?, CombatResolver.Outcome?)
-	local balance = TuningService.balance()
-	local step = balance.Melee[swing.index]
-	if step == nil then
-		return "UnknownSwing", nil
-	end
-
-	local attackerPose =
-		Rewind.sampleAt(attacker.history, clientTime, now, balance.Network.MaxRewind)
-	if not attackerPose.ok then
-		return attackerPose.code, nil
-	end
-
-	local targetPose = Rewind.sampleAt(target.history, clientTime, now, balance.Network.MaxRewind)
-	if not targetPose.ok then
-		return targetPose.code, nil
-	end
-
-	local valid = HitValidator.check({
-		attacker = attackerPose.value,
-		target = targetPose.value,
-		hitbox = Frames.meleeHitbox(balance),
-		toleranceStuds = balance.Hitbox.ServerToleranceStuds,
-		facingDot = balance.Hitbox.FacingDot,
-		hasLineOfSight = lineOfSightBetween(attacker.model, target.model),
-	})
-	if not valid.ok then
-		return valid.code, nil
-	end
-
-	return nil,
-		CombatResolver.resolve(step, {
-			state = target.state,
-			guard = target.guard,
-			health = target.health,
-		}, now, balance)
 end
 
 local function applyOutcome(
@@ -185,7 +99,28 @@ local function onAttack(player: Player, payload: { seq: number, clientTime: numb
 		return
 	end
 
-	local entered = StateService.requestTransition(combatant, "Attacking")
+	-- L'instant revendiqué passe par la même borne que celle d'un rapport de
+	-- contact, et pour la même raison : au-delà, on ne rembobine pas. Un coup daté
+	-- hors fenêtre est refusé avant d'exister, plutôt que d'ancrer une chronologie
+	-- que la validation du contact ne saura ensuite plus atteindre.
+	local balance = TuningService.balance()
+	local fresh = HitValidator.checkTimestamp(
+		payload.clientTime,
+		Clock.now(),
+		balance.Network.ClockTolerance,
+		balance.Network.MaxRewind
+	)
+	if not fresh.ok then
+		refuse(player, payload.seq, fresh.code)
+		return
+	end
+
+	-- Le coup est daté au départ revendiqué, pas à la réception : c'est contre
+	-- cette chronologie que le rapport de contact sera validé, et ce rapport est
+	-- daté sur l'horloge du client (ADR-017). La légalité de la transition, elle,
+	-- reste jugée à l'heure serveur — un instant fourni par le client ne doit
+	-- jamais pouvoir avancer un cooldown.
+	local entered = StateService.requestTransition(combatant, "Attacking", payload.clientTime)
 	if not entered.ok then
 		refuse(player, payload.seq, entered.code)
 		return
@@ -225,10 +160,11 @@ local function onHitReport(
 	end
 
 	-- La hitbox n'est ouverte que pendant la phase active. Un contact revendiqué
-	-- hors de cette fenêtre n'est pas une question de latence : c'est un client
-	-- qui rapporte un coup qu'il n'a pas porté.
-	if phaseAt(swing, payload.clientTime, balance) ~= "Active" then
-		refuse(player, payload.seq, "WrongPhase")
+	-- hors de cette fenêtre n'est pas une question de latence : c'est un client qui
+	-- rapporte un coup qu'il n'a pas porté.
+	local window = Claim.checkActiveWindow(swing, payload.clientTime, balance)
+	if not window.ok then
+		refuse(player, payload.seq, window.code)
 		return
 	end
 
@@ -250,14 +186,14 @@ local function onHitReport(
 			continue
 		end
 
-		local code, outcome = resolveHit(attacker, target, swing, payload.clientTime, now)
-		if outcome == nil then
-			refuse(player, payload.seq, code or "Rejected")
+		local resolved = Claim.resolve(attacker, target, swing, payload.clientTime, now, balance)
+		if not resolved.ok then
+			refuse(player, payload.seq, resolved.code)
 			continue
 		end
 
 		attacker.swingHits[model] = true
-		applyOutcome(attacker, target, outcome, payload.seq, payload.clientTime)
+		applyOutcome(attacker, target, resolved.value, payload.seq, payload.clientTime)
 	end
 
 	Profiler.record("hit_validate", os.clock() - started)

@@ -187,6 +187,16 @@ local Balance = {
 		MaxRewind = 0.25,
 		-- Tolérance sur l'écart entre `clientTime` reçu et l'heure serveur.
 		ClockTolerance = 0.12,
+		-- Marge ajoutée à la FIN de la fenêtre active lors de la validation d'un
+		-- contact. La hitbox s'ouvre sur Heartbeat, donc au plus une frame après
+		-- l'instant d'impact prévu : à 30 fps ce retard atteint 33 ms, et sans
+		-- marge un joueur au framerate bas perdrait des coups honnêtes.
+		--
+		-- Rien n'est ajouté au DÉBUT de la fenêtre, et c'est délibéré : accepter
+		-- un contact revendiqué avant la fin de l'armé donnerait à l'attaquant un
+		-- coup plus rapide que son animation, et le défenseur ne pourrait plus
+		-- caler sa parade sur ce qu'il voit. La parade prime sur l'indulgence.
+		ActivePhaseGrace = 0.05,
 		-- Fréquence d'échantillonnage de l'historique de positions.
 		PositionSampleRate = 20,
 		-- Vitesse horizontale au-delà de laquelle AntiCheatService s'intéresse

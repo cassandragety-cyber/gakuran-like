@@ -39,7 +39,12 @@ end
 	la machine est pure et ne consomme pas de ressources, elle décide seulement de
 	la légalité et de la forme de l'état.
 ]]
-local function applyEntryCost(combatant: Combatant, target: StateName, now: number)
+local function applyEntryCost(
+	combatant: Combatant,
+	target: StateName,
+	now: number,
+	startedAt: number
+)
 	local balance = TuningService.balance()
 
 	if target == "Dashing" then
@@ -51,7 +56,7 @@ local function applyEntryCost(combatant: Combatant, target: StateName, now: numb
 		-- pression.
 		combatant.parryReadyAt = now + balance.Parry.Cooldown
 	elseif target == "Attacking" then
-		combatant.lastSwing = { index = combatant.state.chainIndex, startedAt = now }
+		combatant.lastSwing = { index = combatant.state.chainIndex, startedAt = startedAt }
 		-- Nouveau coup, nouvelle ardoise de cibles.
 		combatant.swingHits = {}
 	end
@@ -61,10 +66,29 @@ end
 	Transition demandée par le joueur. Passe par la table d'autorisations et les
 	gardes de StateMachine ; un refus est une information normale, retournée avec
 	son code, pas une erreur.
+
+	`startedAt` est l'instant où l'action a réellement commencé **chez le
+	client**, sur l'horloge commune (`Clock`, donc `GetServerTimeNow`). Il ne sert
+	qu'à dater la trace du coup, jamais à évaluer sa légalité — la distinction
+	est le fond d'ADR-017 :
+
+	  - la légalité (cooldowns, endurance, transitions permises) est jugée à
+	    `now`, l'heure serveur. Un instant fourni par le client ne doit jamais
+	    pouvoir avancer un cooldown ;
+	  - la CHRONOLOGIE du coup est ancrée à `startedAt`, parce que c'est contre
+	    elle que le rapport de contact sera validé, et que ce rapport est daté
+	    sur l'horloge du client. Ancrer à la réception décalerait toute la
+	    fenêtre active de la latence montante, et refuserait chaque coup.
+
+	L'appelant est responsable d'avoir borné `startedAt` (cf.
+	`HitValidator.checkTimestamp`) : sans borne, un client daterait son coup une
+	heure plus tôt. Omettre l'argument revient à dater le coup à la réception,
+	ce qui est le bon défaut pour une transition d'origine serveur.
 ]]
 function Transitions.requestTransition(
 	combatant: Combatant,
-	target: StateName
+	target: StateName,
+	startedAt: number?
 ): Result.Result<CombatState>
 	local now = Clock.now()
 	local context = Transitions.contextFor(combatant, now)
@@ -74,7 +98,7 @@ function Transitions.requestTransition(
 	end
 
 	combatant.state = StateMachine.enter(combatant.state, target, context)
-	applyEntryCost(combatant, target, now)
+	applyEntryCost(combatant, target, now, startedAt or now)
 	combatant.dirty = true
 	return Result.ok(combatant.state)
 end

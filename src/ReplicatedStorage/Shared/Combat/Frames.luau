@@ -75,13 +75,23 @@ end
 	Index du prochain coup de chaîne. Retourne 1 quand la chaîne est repartie de
 	zéro, sinon l'index suivant. `chainDeadline` nil signifie « coup en cours,
 	pas encore résolu » : on autorise alors l'enchaînement par anticipation.
+
+	La chaîne **boucle** : après le finisher on revient au premier coup. Sans ce
+	retour à 1, un joueur dont le finisher part dans le vide relancerait le
+	finisher tant que la fenêtre de reset court — le coup le plus punitif de la
+	chaîne serait aussi le plus facile à répéter, et les trois premiers coups ne
+	serviraient plus à rien. Le prix du finisher est sa récupération, payée une
+	fois par tour de chaîne.
 ]]
 function Frames.nextChainIndex(state: CombatState, now: number, balance: Balance): number
 	local deadline = state.chainDeadline
-	if state.chainIndex <= 0 or (deadline ~= nil and now > deadline) then
+	if state.chainIndex <= 0 or state.chainIndex >= #balance.Melee then
 		return 1
 	end
-	return math.min(state.chainIndex + 1, #balance.Melee)
+	if deadline ~= nil and now > deadline then
+		return 1
+	end
+	return state.chainIndex + 1
 end
 
 function Frames.canChain(state: CombatState, context: TransitionContext): Result.Verdict

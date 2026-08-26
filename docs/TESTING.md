@@ -569,8 +569,9 @@ end
 ```
 
 Attendu : **aucun** dégât supplémentaire. Selon l'instant, le serveur répond
-`WrongPhase` (aucun coup en phase active) ou ignore silencieusement le doublon si
-un coup est en cours et que la cible est déjà dans `swingHits`.
+`ClaimTooLate` (le dernier coup est sorti de sa fenêtre active), `NoSwing`
+(aucun coup n'a été lancé) ou ignore silencieusement le doublon si un coup est en
+cours et que la cible est déjà dans `swingHits`.
 
 Essayer aussi les rejets de forme, qui n'atteignent jamais le combat :
 
@@ -632,6 +633,85 @@ require(game.ServerScriptService.Server.Services.DiagnosticsService).dumpProfile
 Attendu : une ligne `hit_validate` (coût de la validation serveur). Le coût
 client des hitbox se lit directement sur la ligne `Hitbox p95` du panneau.
 Budget : **p95 < 0,15 ms**.
+
+---
+
+### Correctif 1.2b — ancrage d'horloge et bouclage de la chaîne (ADR-017)
+
+À rejouer après le correctif du refus systématique. **T1.2b.1 est le test qui
+tranche** : si celui-là passe, la tranche 1.2 est réellement finie.
+
+#### T1.2b.1 — Les coups portent enfin
+
+1. Panneau **F2** → « Latence simulée » à **0**.
+2. Se placer devant un mannequin, à portée, face à lui.
+3. Cliquer **quatre fois** au rythme de l'animation (sans marteler).
+
+Attendu, dans l'Output **Client** :
+
+```
+[CombatController] coup N envoyé, index 1, impact dans 100 ms
+[CombatController] coup N : Hit sur Dummy_Face, cible à 92 PV
+[CombatController] coup N+1 envoyé, index 2, ...
+```
+
+- la vie du mannequin descend **100 → 92 → 84 → 75 → 61** ;
+- l'index de chaîne monte **1, 2, 3, 4** puis **repart à 1** ;
+- le 4ᵉ coup envoie le mannequin **au sol** (`Knocked`) ;
+- **aucun** `ClaimTooEarly` dans l'Output.
+
+Si `ClaimTooEarly` réapparaît, la chronologie est de nouveau désancrée : c'est le
+symptôme exact d'ADR-017, et il est systématique — pas un coup sur dix.
+
+#### T1.2b.2 — Le correctif tient à 150 ms, qui est l'objectif du brief
+
+Même manipulation avec la latence simulée à **150**. Attendu : **identique**. Les
+dégâts tombent, les mêmes index défilent. C'est tout l'intérêt d'ancrer la trace
+du coup sur l'horloge du client — la latence ne doit rien changer au fait qu'un
+coup honnête porte.
+
+Pousser ensuite à **400** : les refus reviennent, mais en `RewindExceeded` ou
+`StaleTimestamp` — jamais en `ClaimTooEarly`. La distinction est le diagnostic :
+la borne du rembobinage est un refus **assumé** (ADR-001), un décalage d'horloge
+est un **bug**.
+
+#### T1.2b.3 — La chaîne boucle, le finisher ne se répète pas
+
+1. Latence à 0, se placer **hors de portée** de tout mannequin.
+2. Frapper quatre fois dans le vide, au rythme (moins de 0,8 s entre deux coups).
+3. Frapper une **cinquième** fois.
+
+Attendu : le cinquième coup repart à l'**index 1**, pas à l'index 4.
+
+C'était le bug caché sous le symptôme : `nextChainIndex` plafonnait au lieu de
+boucler, donc rater le finisher permettait de rejouer le finisher — 14 dégâts et
+un knockdown à volonté, tant que courait la fenêtre de coup manqué.
+
+Vérifier ensuite l'inverse : frapper une fois dans le vide, **attendre plus de
+0,8 s** (`WhiffResetDelay`), refrapper. Le coup repart à l'index 1 — la fenêtre de
+reset a expiré.
+
+#### T1.2b.4 — La tolérance de fin de fenêtre ne s'applique qu'à la fin
+
+Console **Client**, en frappant un mannequin puis en rapportant hors fenêtre :
+
+```lua
+local net = game.ReplicatedStorage.BanchouNet
+local dummy = workspace.TrainingGround.Dummy_Face
+-- Revendiquer un contact bien avant la fin de l'armé du coup en cours :
+net["Combat.HitReport"]:FireServer({
+    seq = 4242,
+    clientTime = workspace:GetServerTimeNow() - 0.20,
+    targets = { dummy },
+})
+```
+
+Attendu : `ClaimTooEarly` ou `NoSwing` selon l'instant — **jamais** un `Hit`.
+
+**Ce que ça prouve.** La borne de début est stricte. Un attaquant ne peut pas
+faire tomber son impact avant la fin de son armé, donc l'impact réel ne précède
+jamais l'impact visible — c'est la condition pour que la parade de la tranche 1.4
+soit lisible par le défenseur.
 
 ---
 

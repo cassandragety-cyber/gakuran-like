@@ -95,6 +95,20 @@ function M.validateBalance(problems: { string })
 		isPositive(network.ClockTolerance),
 		"Balance.Network.ClockTolerance doit être > 0"
 	)
+
+	-- La marge de fin de phase active doit rester petite devant la phase active
+	-- la plus courte : au-delà, elle cesse d'absorber une frame et devient une
+	-- rallonge de la fenêtre de contact, ce qui déplace l'impact réel loin de
+	-- l'impact visuel.
+	local shortestActive = math.huge
+	for _, step in melee do
+		shortestActive = math.min(shortestActive, step.active)
+	end
+	check(
+		problems,
+		network.ActivePhaseGrace >= 0 and network.ActivePhaseGrace <= shortestActive,
+		`Balance.Network.ActivePhaseGrace doit être dans [0, {shortestActive}] : au-delà de la phase active la plus courte, ce n'est plus une tolérance de frame mais une hitbox rallongée`
+	)
 end
 
 --[[

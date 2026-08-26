@@ -143,8 +143,8 @@ local function tick()
 		return
 	end
 
-	local now = Clock.now()
-	if now < swing.impactAt then
+	local openedAt = Clock.now()
+	if openedAt < swing.impactAt then
 		return
 	end
 
@@ -170,10 +170,13 @@ local function tick()
 
 	Net.Client.fire(Definitions.CombatHitReport, {
 		seq = swing.seq,
-		-- L'instant d'impact prédit, et non « maintenant » : c'est cet instant que
-		-- le serveur rembobine, et il doit correspondre à celui où la hitbox a
-		-- réellement été ouverte, pas à la frame où le paquet part.
-		clientTime = swing.impactAt,
+		-- L'instant où la hitbox a RÉELLEMENT été ouverte, et non l'instant
+		-- d'impact prédit. Les deux diffèrent du dépassement de frame : `tick`
+		-- s'exécute sur Heartbeat, donc au plus une frame après `impactAt`. C'est
+		-- cet instant que le serveur rembobine, et les positions interrogées
+		-- ci-dessus sont celles de cette frame-ci — dater le paquet d'`impactAt`
+		-- ferait valider une géométrie contre des poses d'un autre instant.
+		clientTime = openedAt,
 		-- Luau refuse le transtypage direct entre deux types de tableaux ;
 		-- le contenu est bien constitué d'Instance.
 		targets = (targets :: any) :: { Instance },

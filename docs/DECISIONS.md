@@ -489,6 +489,97 @@ ajouté — aucun chemin de code qui échoue en silence.
 
 ---
 
+## ADR-017 — Un coup est daté sur l'horloge du client, sa légalité jugée sur celle du serveur
+
+**Statut :** acceptée (correctif de tranche 1.2)
+
+**Contexte.** Après la correction du crash `Parsers.Session`, les coups partaient
+enfin — et **tous** étaient refusés en `WrongPhase`, même à latence simulée nulle,
+mannequins figés à 100/100.
+
+La cause est une incohérence d'horloge entre deux moitiés du même mécanisme, et
+elle était invisible à la lecture de chaque moitié prise séparément :
+
+- le client prédit sa transition, retient `enteredAt` (son instant d'appui), et
+  rapporte le contact à `enteredAt + windup` ;
+- le serveur, lui, datait la trace du coup (`Combatant.lastSwing.startedAt`) à
+  l'instant de **réception** du paquet.
+
+Le serveur calculait donc `elapsed = (enteredAt + windup) − (enteredAt + latence)`,
+soit `windup − latence`. Strictement inférieur à `windup` pour toute latence
+positive, donc phase `Windup`, donc refus — **à chaque coup, pour tout le monde**.
+Studio à « latence nulle » n'y échappe pas : il reste le RTT réel, la file de
+`LatencySim` et la granularité du Heartbeat.
+
+L'ironie du dossier : `CombatService` et `Types.luau` documentaient déjà, en
+toutes lettres, que la phase devait être évaluée à l'instant revendiqué (c'est la
+raison d'être de `lastSwing`). Le commentaire était juste, le code datait la trace
+sur l'autre horloge. Une intention correcte n'est pas une garantie.
+
+**Décision.** Séparer explicitement les deux usages d'un instant, et ne plus
+jamais les confondre :
+
+| | Horloge | Pourquoi |
+|---|---|---|
+| **Légalité** d'une transition — cooldowns, endurance, transitions permises | serveur (`Clock.now()` à la réception) | Un instant fourni par le client ne doit jamais pouvoir avancer un cooldown. C'est une ressource que le serveur possède. |
+| **Chronologie** du coup accepté — `lastSwing.startedAt` | client (`payload.clientTime`, borné) | C'est contre elle que le rapport de contact sera validé, et ce rapport est daté sur l'horloge du client. |
+
+`Clock` est `GetServerTimeNow()` des deux côtés : les deux instants sont sur la
+même base de temps, seul le transit les sépare. L'instant revendiqué passe par
+`HitValidator.checkTimestamp`, la **même** borne `[−ClockTolerance, +MaxRewind]`
+que celle d'un rapport de contact — un client qui antidate son coup ne gagne que
+ce que le rembobinage lui accordait déjà, et le paie en expiration anticipée.
+
+**Deuxième correctif, même dossier : la fenêtre active a une marge, d'un seul
+côté.** La hitbox client s'ouvre sur `Heartbeat`, donc au plus une frame après
+l'instant d'impact prévu : à 30 fps, 33 ms de retard qui coûteraient des coups
+honnêtes. D'où `Balance.Network.ActivePhaseGrace`, ajoutée à la **fin** de la
+fenêtre.
+
+Rien n'est ajouté au **début**, et c'est un arbitrage de design, pas un oubli :
+accepter un contact revendiqué avant la fin de l'armé donnerait à l'attaquant un
+coup plus rapide que son animation. Le défenseur cale sa parade sur ce qu'il voit
+— si l'impact réel peut précéder l'impact visuel, la parade devient illisible, et
+c'est la mécanique signature du jeu. **Entre l'indulgence envers l'attaquant et la
+lisibilité pour le défenseur, on tranche toujours pour le défenseur.**
+
+Les deux refus portent désormais des codes distincts, `ClaimTooEarly` et
+`ClaimTooLate`, là où `WrongPhase` couvrait les deux. Ce n'est pas cosmétique :
+`ClaimTooEarly` systématique dénonce une chronologie mal ancrée, `ClaimTooLate`
+sporadique un framerate bas. Le code de refus est l'outil de diagnostic à
+distance ; le confondre, c'était s'interdire de lire ce bug-ci sans instrumenter.
+
+**Troisième correctif, trouvé en tirant le fil : la chaîne ne bouclait pas.**
+`Frames.nextChainIndex` faisait `math.min(chainIndex + 1, #Melee)`. Après le
+finisher, elle retournait donc le finisher. Tant que courait la fenêtre de reset
+de coup manqué (`WhiffResetDelay`, 0,8 s), un joueur qui ratait le 4ᵉ coup
+**rejouait le 4ᵉ coup** — 14 dégâts et knockdown — au lieu de repartir à 8. Le
+coup le plus punitif de la chaîne était aussi le plus facile à répéter, et les
+trois premiers ne servaient à rien. La chaîne boucle maintenant sur 1.
+
+C'est ce qui produisait l'index bloqué à 4 et les rafales de `ChainComplete` : le
+symptôme visible venait du refus systématique (aucun impact, donc `markImpact`
+jamais appelé, donc que des coups manqués), mais il a mis au jour une règle
+d'équilibrage réellement fausse en dessous.
+
+**Conséquences acceptées.** L'état serveur (`state.enteredAt`) reste, lui, daté à
+la réception : seule la trace du coup est ancrée côté client. Le décalage
+résiduel — l'état serveur court une latence en retard sur celui du client — n'est
+visible que sur `canChain`, qui ne refuse que pendant l'armé ; il faudrait
+enchaîner à moins d'une latence de la fin de l'armé pour le sentir. Si la tranche
+1.4 montre que la parade y est sensible, ancrer aussi `enteredAt` est le geste
+suivant — il se discutera à ce moment-là, avec la mesure sous les yeux.
+
+**Ce que ça dit sur la méthode.** Trois bugs, un seul symptôme. Le premier était
+une incohérence entre deux fichiers qu'aucun outil de la chaîne ne relie —
+l'analyse de types (ADR-016) voit les signatures, pas les unités. La leçon est la
+même qu'en ADR-016 mais d'un cran plus haut : **quand deux modules échangent un
+nombre, le type ne suffit pas — il faut nommer l'horloge.** D'où les paramètres
+`startedAt` / `at` / `now` distingués dans les signatures plutôt qu'un `time`
+générique.
+
+---
+
 ## Décisions différées (à trancher au moment dit, notées ici pour ne pas être oubliées)
 
 | Sujet | Phase | Pourquoi on attend |
