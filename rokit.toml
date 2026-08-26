@@ -6,3 +6,5 @@ rojo = "rojo-rbx/rojo@7.7.0"
 wally = "UpliftGames/wally@0.3.2"
 selene = "Kampfkarren/selene@0.28.0"
 stylua = "JohnnyMorganz/StyLua@2.0.2"
+# L'analyse de types : le seul outil de la chaîne qui voie au-delà d'un fichier.
+luau-lsp = "JohnnyMorganz/luau-lsp@1.49.1"

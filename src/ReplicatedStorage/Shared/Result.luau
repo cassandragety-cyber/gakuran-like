@@ -12,6 +12,14 @@ export type Ok<T> = { ok: true, value: T }
 export type Err = { ok: false, code: string, detail: string? }
 export type Result<T> = Ok<T> | Err
 
+--[[
+	Résultat dont la valeur de succès ne porte aucune information : seule compte
+	la distinction succès/refus. On ne l'écrit pas `Result<true>` — `Result.ok(true)`
+	produit un `Ok<boolean>`, le littéral étant élargi, et les deux types ne se
+	convertissent pas l'un dans l'autre.
+]]
+export type Verdict = Result<boolean>
+
 local Result = {}
 
 function Result.ok<T>(value: T): Result<T>

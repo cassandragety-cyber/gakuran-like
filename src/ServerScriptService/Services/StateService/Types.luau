@@ -12,6 +12,8 @@ local CombatTypes = require(ReplicatedStorage.Shared.Combat.Types)
 local RingBuffer = require(ReplicatedStorage.Shared.RingBuffer)
 local StaminaModel = require(ReplicatedStorage.Shared.Combat.StaminaModel)
 
+type CombatState = CombatTypes.CombatState
+
 --[[
 	Trace du dernier coup lancé, conservée même après que l'état soit revenu à
 	`Idle`.

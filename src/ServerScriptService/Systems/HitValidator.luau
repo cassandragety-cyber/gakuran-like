@@ -51,7 +51,7 @@ function HitValidator.checkTimestamp(
 	now: number,
 	clockTolerance: number,
 	maxRewind: number
-): Result.Result<true>
+): Result.Verdict
 	local age = now - clientTime
 	if age < -clockTolerance then
 		return Result.err(
@@ -72,7 +72,7 @@ end
 	scalaire, la boîte trois comparaisons, la ligne de vue un raycast. Sur un
 	serveur à 30 joueurs, l'ordre décide du coût réel.
 ]]
-function HitValidator.check(claim: Claim): Result.Result<true>
+function HitValidator.check(claim: Claim): Result.Verdict
 	local attacker = claim.attacker
 	local target = claim.target
 	local toTarget = target.position - attacker.position

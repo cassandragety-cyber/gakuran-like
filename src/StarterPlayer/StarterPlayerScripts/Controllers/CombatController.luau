@@ -174,7 +174,9 @@ local function tick()
 		-- le serveur rembobine, et il doit correspondre à celui où la hitbox a
 		-- réellement été ouverte, pas à la frame où le paquet part.
 		clientTime = swing.impactAt,
-		targets = targets :: { Instance },
+		-- Luau refuse le transtypage direct entre deux types de tableaux ;
+		-- le contenu est bien constitué d'Instance.
+		targets = (targets :: any) :: { Instance },
 	})
 end
 

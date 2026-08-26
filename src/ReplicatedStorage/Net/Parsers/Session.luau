@@ -92,7 +92,7 @@ function Session.parseStateSync(value: unknown): Types.StateSync?
 	local raw = value :: { [string]: unknown }
 
 	local userId = Parsers.parseInteger(raw.userId, 1, 1e15)
-	local state = Parsers.parseCombatState(raw.state)
+	local state = Session.parseCombatState(raw.state)
 	local health = Parsers.parseFiniteNumber(raw.health)
 	local stamina = Parsers.parseFiniteNumber(raw.stamina)
 	local guard = Parsers.parseFiniteNumber(raw.guard)

@@ -36,7 +36,8 @@ MovementService.Dependencies = { "CharacterService", "StateService", "TuningServ
 ]]
 local function speedFor(player: Player): number
 	local balance = TuningService.balance()
-	local record = StateService.get(player)
+	-- `get` prend un Model depuis ADR-014 ; c'est `ofPlayer` qui traduit.
+	local record = StateService.ofPlayer(player)
 	if record == nil then
 		return balance.Character.WalkSpeed
 	end
@@ -80,7 +81,11 @@ function MovementService.Init()
 			)
 		end
 
-		StateService.setSprinting(player, payload.active)
+		local combatant = StateService.ofPlayer(player)
+		if combatant == nil then
+			return
+		end
+		StateService.setSprinting(combatant, payload.active)
 	end)
 end
 

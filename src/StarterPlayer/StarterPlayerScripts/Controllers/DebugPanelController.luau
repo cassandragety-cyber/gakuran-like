@@ -57,7 +57,7 @@ local function buildReadouts(handle: Panel.Panel)
 	local sections: { [string]: Frame } = {}
 	for _, entry in Readouts.rows do
 		local container = sections[entry.section]
-		if container == nil then
+		if not container then
 			container = handle.section(entry.section)
 			sections[entry.section] = container
 		end

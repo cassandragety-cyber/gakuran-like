@@ -99,7 +99,7 @@ function StateMachine.isParryWindowOpen(state: CombatState, now: number): boolea
 	return window ~= nil and now <= window
 end
 
-local function canDash(state: CombatState, context: TransitionContext): Result.Result<true>
+local function canDash(state: CombatState, context: TransitionContext): Result.Verdict
 	local balance = context.balance
 	if context.now < context.dashReadyAt then
 		return Result.err("DashCooldown", "le dash n'est pas rechargé")
@@ -121,7 +121,7 @@ local function canDash(state: CombatState, context: TransitionContext): Result.R
 	return Result.ok(true)
 end
 
-local function canBlock(context: TransitionContext): Result.Result<true>
+local function canBlock(context: TransitionContext): Result.Verdict
 	local balance = context.balance
 	if context.now < context.parryReadyAt then
 		return Result.err("ParryCooldown", "la garde ne peut pas être réouverte si tôt")
@@ -141,7 +141,7 @@ function StateMachine.canRequest(
 	state: CombatState,
 	target: StateName,
 	context: TransitionContext
-): Result.Result<true>
+): Result.Verdict
 	if not REQUESTABLE[state.name][target] then
 		return Result.err(
 			"TransitionForbidden",

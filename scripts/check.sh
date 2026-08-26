@@ -7,6 +7,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Doit rester aligné sur la version épinglée dans rokit.toml : les définitions
+# de types utilisent une syntaxe que seul le binaire de même version sait lire.
+LUAU_LSP_VERSION="1.49.1"
+
 failures=0
 step() { printf "\n\033[1m==> %s\033[0m\n" "$1"; }
 fail() { printf "\033[31m    ÉCHEC : %s\033[0m\n" "$1"; failures=$((failures + 1)); }
@@ -27,6 +31,30 @@ if command -v selene >/dev/null 2>&1; then
 	selene src/ || fail "lint en erreur"
 else
 	fail "selene introuvable"
+fi
+
+# L'analyse de types est la seule étape de la chaîne qui regarde AU-DELÀ d'un
+# fichier. StyLua formate, Selene lint dans un fichier, la compilation vérifie la
+# syntaxe : aucun des trois ne sait qu'un module ne contient pas la fonction
+# qu'un autre appelle. C'est exactement le bug qui a coûté deux cycles de test en
+# tranche 1.2, et c'est cette étape qui l'aurait arrêté.
+step "luau-lsp (analyse de types)"
+if command -v luau-lsp >/dev/null 2>&1 && command -v rojo >/dev/null 2>&1; then
+	if [ ! -f globalTypes.d.luau ]; then
+		printf "    globalTypes.d.luau absent, téléchargement...\n"
+		curl -sSL -o globalTypes.d.luau \
+			"https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/${LUAU_LSP_VERSION}/scripts/globalTypes.d.luau" \
+			|| fail "téléchargement des définitions Roblox impossible"
+	fi
+	rojo sourcemap default.project.json -o sourcemap.json >/dev/null
+	luau-lsp analyze \
+		--sourcemap=sourcemap.json \
+		--definitions=globalTypes.d.luau \
+		--base-luaurc=.luaurc \
+		--settings=luau-lsp.json \
+		src/ || fail "erreurs de types — voir ci-dessus"
+else
+	fail "luau-lsp ou rojo introuvable (lancez 'rokit install')"
 fi
 
 # Le brief interdit les boucles d'attente actives (budget §6). Selene ne sait

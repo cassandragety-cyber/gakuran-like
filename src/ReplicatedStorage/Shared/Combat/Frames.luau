@@ -84,7 +84,7 @@ function Frames.nextChainIndex(state: CombatState, now: number, balance: Balance
 	return math.min(state.chainIndex + 1, #balance.Melee)
 end
 
-function Frames.canChain(state: CombatState, context: TransitionContext): Result.Result<true>
+function Frames.canChain(state: CombatState, context: TransitionContext): Result.Verdict
 	local balance = context.balance
 	if state.chainIndex >= #balance.Melee then
 		return Result.err("ChainComplete", "le dernier coup de la chaîne est déjà parti")

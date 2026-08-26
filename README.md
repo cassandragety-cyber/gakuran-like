@@ -28,11 +28,15 @@ locale. La garde arrive en 1.3, la parade en 1.4. Découpage complet dans
 ## Installation
 
 ```bash
-rokit install          # rojo, wally, selene, stylua aux versions épinglées
-wally install          # dépendances -> Packages/ (facultatif en Phase 0)
+rokit install          # rojo, wally, selene, stylua, luau-lsp aux versions épinglées
+wally install          # dépendances -> Packages/ et ServerPackages/
 selene generate-roblox-std   # génère roblox.toml, le std de lint (non commité)
 rojo sourcemap default.project.json -o sourcemap.json   # types dans l'éditeur
 ```
+
+`scripts/check.sh` télécharge tout seul `globalTypes.d.luau` (les définitions de
+l'API Roblox) au premier lancement. Les deux fichiers générés — `roblox.toml` et
+`globalTypes.d.luau` — sont liés à des versions d'outils et ne sont pas commités.
 
 `wally install` est **nécessaire** depuis la tranche 1.1 : le nettoyage des
 connexions de personnage passe par Trove. Le serveur refuse de démarrer avec un
@@ -86,9 +90,14 @@ groupe.
 ./scripts/check.sh
 ```
 
-Le script enchaîne : format StyLua, lint Selene, absence de boucle d'attente
-active, limite de 300 lignes par module, présence de `--!strict` partout. Il
-doit passer avant chaque commit.
+Le script enchaîne : format StyLua, lint Selene, **analyse de types luau-lsp**,
+absence de boucle d'attente active, limite de 300 lignes par module, présence de
+`--!strict` partout. Il doit passer avant chaque commit.
+
+L'analyse de types est la seule étape qui regarde **au-delà d'un fichier** :
+c'est elle qui attrape un module appelant une fonction qu'un autre n'expose pas.
+Elle exige `wally install` au préalable, faute de quoi les paquets ne se
+résolvent pas.
 
 Formater automatiquement : `stylua src/`.
 

@@ -120,7 +120,7 @@ end
 	un remote absent.
 ]]
 function Net.Server.available(definition: Definitions.AnyDefinition): boolean
-	return serverRemotes[definition.id] ~= nil
+	return serverRemotes[definition.id] and true or false
 end
 
 local function serverRemote(definition: Definitions.AnyDefinition): RemoteEvent

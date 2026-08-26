@@ -26,10 +26,10 @@ HitboxVisualizer.Dependencies = { "TuningController" }
 -- illisible à l'œil ; plus longue laisserait croire à une portée persistante.
 local LINGER = 0.25
 
-local box: BasePart? = nil
+local box: Part? = nil
 local hideAt = 0
 
-local function ensureBox(): BasePart
+local function ensureBox(): Part
 	local existing = box
 	if existing then
 		return existing

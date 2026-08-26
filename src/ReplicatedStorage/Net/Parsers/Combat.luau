@@ -107,7 +107,9 @@ function Combat.parseHitResult(value: unknown): Types.HitResult?
 		seq = seq,
 		verdict = verdict :: CombatTypes.Verdict,
 		damage = damage,
-		target = target,
+		-- Les propriétés de table sont invariantes en Luau : un `Model` ne se
+		-- convertit pas en `Instance` à cette position, alors qu'il en est un.
+		target = target :: Instance,
 		targetHealth = targetHealth,
 		hitstop = hitstop,
 	}

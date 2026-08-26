@@ -14,6 +14,10 @@
 # Std selene généré depuis le dump d'API Roblox (dépend de la version du client).
 /roblox.toml
 
+# Définitions de types Roblox pour luau-lsp : liées à la version de l'outil,
+# téléchargées par scripts/check.sh.
+/globalTypes.d.luau
+
 # Binaires d'outillage téléchargés localement.
 /.tools/
 

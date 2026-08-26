@@ -445,6 +445,50 @@ qu'à l'espace.
 
 ---
 
+## ADR-016 — L'analyse de types entre dans le contrôle qualité
+
+**Statut :** accepté (tranche 1.2, après incident) · **Impact :** process
+
+**Contexte.** Un découpage mécanique de `Net/Parsers` en trois modules a laissé
+un appel `Parsers.parseCombatState` alors que la fonction avait déménagé dans
+`Session`. Résultat : `attempt to call a nil value` dix fois par seconde côté
+client, aucun état de combat parsé, et un clic sans effet. Le contrôle qualité
+est passé au vert sur ce commit.
+
+Il ne pouvait pas faire autrement. StyLua formate. Selene lint **dans** un
+fichier. `luau-compile` vérifie la syntaxe. **Aucun des trois ne sait qu'un
+module n'expose pas la fonction qu'un autre appelle.** Le trou n'était pas un
+oubli de rigueur, c'était un angle mort de l'outillage.
+
+**Décision.** `luau-lsp analyze` devient une étape de `scripts/check.sh`, avec le
+sourcemap Rojo et les définitions de l'API Roblox. La version est épinglée dans
+`rokit.toml` et doit rester alignée avec celle des définitions téléchargées — un
+binaire ne sait lire que la syntaxe de types de sa propre version.
+
+**Alternative écartée.** Écrire un vérificateur maison qui compare les
+références `Module.fonction` aux définitions trouvées dans les fichiers.
+
+**Pourquoi.** Le vérificateur maison n'aurait couvert que ce cas précis. L'analyse
+de types couvre la même classe **et** tout le reste : sur son premier passage,
+elle a trouvé 29 problèmes, dont deux autres bugs d'exécution que personne
+n'avait vus — `MovementService` passait encore un `Player` au registre indexé par
+`Model` depuis ADR-014, ce qui cassait silencieusement le sprint, et
+`HitboxVisualizer` écrivait `Shape` sur un `BasePart`, ce qui aurait planté à la
+première hitbox affichée.
+
+**Coût payé.** Une passe de nettoyage : `Result<true>` remplacé par
+`Result.Verdict` (le littéral `true` s'élargit en `boolean` et les deux types ne
+se convertissent pas), arité uniformisée des lectures du panneau, comparaisons
+`~= nil` sur des types Instance remplacées par des tests de vérité. Le dépôt est
+à zéro erreur de type, ce qui rend l'étape exigible plutôt qu'informative.
+
+**Ce que ça ne couvre pas.** L'analyse ne voit pas les erreurs de câblage à
+l'exécution : un handler enregistré sur le mauvais événement, un ordre
+d'initialisation erroné. Pour celles-là, la réponse reste ce que la tranche 1.2 a
+ajouté — aucun chemin de code qui échoue en silence.
+
+---
+
 ## Décisions différées (à trancher au moment dit, notées ici pour ne pas être oubliées)
 
 | Sujet | Phase | Pourquoi on attend |

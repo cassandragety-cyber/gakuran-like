@@ -69,9 +69,9 @@ end
 function LatencySim.setRoundTrip(seconds: number)
 	oneWayDelay = math.max(seconds, 0) / 2
 
-	if oneWayDelay > 0 and connection == nil then
+	if oneWayDelay > 0 and not connection then
 		connection = RunService.Heartbeat:Connect(flush)
-	elseif oneWayDelay == 0 and connection ~= nil then
+	elseif oneWayDelay == 0 and connection then
 		-- On vide ce qui restait plutôt que de l'abandonner : sinon désactiver la
 		-- simulation ferait disparaître des paquets en vol.
 		flush()

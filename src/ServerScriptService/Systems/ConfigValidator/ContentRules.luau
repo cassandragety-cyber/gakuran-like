@@ -38,7 +38,7 @@ function M.validateRarity(problems: { string })
 		declared[name] = true
 		local weight = weights[name]
 		check(problems, isPositive(weight), `Rarity.WEIGHTS.{name} doit être un nombre > 0`)
-		check(problems, colors[name] ~= nil, `Rarity.COLORS.{name} manquant`)
+		check(problems, colors[name] and true or false, `Rarity.COLORS.{name} manquant`)
 		if type(weight) == "number" then
 			total += weight
 		end

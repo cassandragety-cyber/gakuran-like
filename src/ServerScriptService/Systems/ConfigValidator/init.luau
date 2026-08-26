@@ -24,7 +24,7 @@ local Result = require(ReplicatedStorage.Shared.Result)
 
 local ConfigValidator = {}
 
-function ConfigValidator.validate(): Result.Result<true>
+function ConfigValidator.validate(): Result.Verdict
 	local problems: { string } = {}
 
 	ContentRules.validateRarity(problems)

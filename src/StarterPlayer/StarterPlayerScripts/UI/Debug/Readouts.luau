@@ -55,7 +55,7 @@ Readouts.rows = {
 	{
 		section = "État",
 		label = "État",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local state = StateMirrorController.authoritative()
 			if state == nil then
 				return "en attente du serveur", Theme.Colors.Warning
@@ -87,7 +87,7 @@ Readouts.rows = {
 	{
 		section = "État",
 		label = "Index de chaîne",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local state = StateMirrorController.authoritative()
 			return if state then tostring(state.chainIndex) else "—"
 		end,
@@ -104,7 +104,7 @@ Readouts.rows = {
 	{
 		section = "Ressources",
 		label = "PV",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local mirror = StateMirrorController.own()
 			if mirror == nil then
 				return "—"
@@ -116,7 +116,7 @@ Readouts.rows = {
 	{
 		section = "Ressources",
 		label = "Endurance",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local mirror = StateMirrorController.own()
 			if mirror == nil then
 				return "—"
@@ -132,7 +132,7 @@ Readouts.rows = {
 	{
 		section = "Ressources",
 		label = "Jauge de garde",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local mirror = StateMirrorController.own()
 			if mirror == nil then
 				return "—"
@@ -190,7 +190,7 @@ Readouts.rows = {
 	{
 		section = "Réseau",
 		label = "RTT médian",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local rtt = DiagnosticsController.medianRoundTrip()
 			if rtt == nil then
 				return "en cours de mesure", Theme.Colors.TextMuted
@@ -216,14 +216,14 @@ Readouts.rows = {
 	{
 		section = "Prédiction",
 		label = "État prédit",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			return StateMirrorController.predicted().name, Theme.Colors.TextMuted
 		end,
 	},
 	{
 		section = "Prédiction",
 		label = "Écarts",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local divergence = StateMirrorController.divergence()
 			if divergence.count == 0 then
 				return "0", Theme.Colors.Good
@@ -237,7 +237,7 @@ Readouts.rows = {
 	{
 		section = "Combat",
 		label = "Coups envoyés",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local sent = CombatController.sentCount()
 			return tostring(sent), if sent == 0 then Theme.Colors.Warning else Theme.Colors.Good
 		end,
@@ -245,7 +245,7 @@ Readouts.rows = {
 	{
 		section = "Combat",
 		label = "Dernier verdict",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local verdict = CombatController.lastOutcome()
 			return verdict or "—", if verdict then Theme.Colors.Good else Theme.Colors.TextMuted
 		end,
@@ -253,7 +253,7 @@ Readouts.rows = {
 	{
 		section = "Combat",
 		label = "Dernier refus",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local _, refusal, age = CombatController.lastOutcome()
 			if refusal == nil then
 				return "aucun", Theme.Colors.TextMuted
@@ -264,7 +264,7 @@ Readouts.rows = {
 	{
 		section = "Performance",
 		label = "Hitbox p95",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local snapshot = Profiler.snapshot("hitbox")
 			if snapshot == nil then
 				return "aucun échantillon", Theme.Colors.TextMuted
@@ -277,7 +277,7 @@ Readouts.rows = {
 	{
 		section = "Entrées",
 		label = "Dernière action",
-		read = function(): (string, Color3?)
+		read = function(_now: number): (string, Color3?)
 			local action, age, listeners = InputController.lastFired()
 			if action == nil then
 				return "aucune", Theme.Colors.TextMuted
