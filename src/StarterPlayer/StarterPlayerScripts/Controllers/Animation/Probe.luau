@@ -50,9 +50,16 @@ type Sample = {
 
 local lastWrites: { [string]: CFrame } = {}
 local sample: Sample? = nil
--- Noms écrits dans la frame. « Seule Waist bouge ? » est la première question
--- qu'on se pose devant un témoin unique, et la liste y répond sans ambiguïté.
-local writtenNames: { string } = {}
+local sampleAngle = 0
+--[[
+	Toutes les jointures écrites dans la frame, avec leur angle.
+
+	Un témoin unique ne peut pas répondre à « les épaules reçoivent-elles une
+	valeur franche ? » : il faut la répartition. C'est la question qu'on se pose
+	dès qu'une pose s'écrit sans se voir, et y répondre en une capture évite un
+	aller-retour de plus.
+]]
+local written: { { name: string, angle: number } } = {}
 local writeCount = 0
 local overwritten = false
 local readBackAngle: number? = nil
@@ -138,16 +145,25 @@ function Probe.readBack(joints: { [string]: { Transform: CFrame } })
 end
 
 --[[
-	Enregistre une écriture. La jointure retenue pour l'échantillon est la
-	PREMIÈRE de la frame : un échantillon stable vaut mieux qu'un échantillon
-	représentatif, puisqu'on cherche à savoir si l'écriture tient, pas laquelle.
+	Enregistre une écriture.
+
+	Le témoin retenu est la jointure la PLUS AMPLE de la frame, et non la
+	première. La première est arbitraire — l'ordre d'itération d'une table ne
+	veut rien dire — et elle a coûté un aller-retour : `Waist` sortait à 12°,
+	ce qui se lit « la pose est faible » alors que les épaules recevaient 75° au
+	même instant. Le témoin doit répondre à « cette pose a-t-elle de
+	l'amplitude ? », donc porter le maximum.
 ]]
 function Probe.wrote(jointName: string, className: string, value: CFrame)
 	writeCount += 1
 	lastWrites[jointName] = value
-	table.insert(writtenNames, jointName)
-	if writeCount == 1 then
+
+	local angle = angleOf(value)
+	table.insert(written, { name = jointName, angle = angle })
+
+	if writeCount == 1 or angle > sampleAngle then
 		sample = { jointName = jointName, className = className, value = value }
+		sampleAngle = angle
 	end
 end
 
@@ -166,7 +182,8 @@ end
 function Probe.beginFrame()
 	frames += 1
 	writeCount = 0
-	table.clear(writtenNames)
+	sampleAngle = 0
+	table.clear(written)
 end
 
 function Probe.frames(): number
@@ -189,11 +206,15 @@ function Probe.endFrame()
 	end
 
 	local watched = sample :: Sample
+	local parts: { string } = {}
+	for _, entry in written do
+		table.insert(parts, string.format("%s %.0f°", entry.name, entry.angle))
+	end
+
 	Log.info(
 		SCOPE,
-		`frame : {writeCount} écrite(s) [{table.concat(writtenNames, ", ")}] · `
-			.. `témoin {watched.jointName} ({watched.className}) `
-			.. `écrit {string.format("%.1f", angleOf(watched.value))}° · `
+		`frame : {writeCount} écrite(s) ({watched.className}) — {table.concat(parts, " · ")} `
+			.. `‖ max {watched.jointName} {string.format("%.1f", sampleAngle)}° · `
 			.. `relu {if readBackAngle then string.format("%.1f°", readBackAngle) else "absent"} · `
 			.. `{if overwritten then "ÉCRASÉ" else "tenu"}`
 	)
@@ -223,13 +244,15 @@ function Probe.status(): (number, string, boolean)
 			true
 	end
 
+	-- « max » explicite : sans ce mot, un angle de témoin se lit comme l'amplitude
+	-- de toute la pose, alors qu'il n'en est que la borne haute.
 	local current = watched :: Sample
 	return writeCount,
 		string.format(
-			"%s (%s) %.0f° → relu %s",
+			"max %s (%s) %.0f° → relu %s",
 			current.jointName,
 			current.className,
-			angleOf(current.value),
+			sampleAngle,
 			if readBackAngle then string.format("%.0f°", readBackAngle) else "absent"
 		),
 		overwritten
