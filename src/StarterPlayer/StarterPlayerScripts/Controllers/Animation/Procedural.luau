@@ -27,6 +27,7 @@ local RunService = game:GetService("RunService")
 local Clock = require(ReplicatedStorage.Shared.Clock)
 local Log = require(ReplicatedStorage.Shared.Log)
 local PosesConfig = require(ReplicatedStorage.Config.Poses)
+local Probe = require(script.Parent.Probe)
 local Rig = require(script.Parent.Rig)
 
 local SCOPE = "Procedural"
@@ -73,6 +74,19 @@ end
 function Procedural.diagnose(): (string, number, number, boolean)
 	local rigLabel, resolved, required = Rig.diagnose()
 	return rigLabel, resolved, required, bound
+end
+
+--[[
+	Démarre une capture journalisée au point d'écriture. Une ligne par frame :
+	combien de jointures ont été écrites, laquelle sert de témoin, l'angle écrit,
+	et ce qu'il en restait à la frame suivante.
+]]
+function Procedural.capture(seconds: number)
+	Probe.capture(seconds)
+end
+
+function Procedural.writeStatus(): (number, string, boolean)
+	return Probe.status()
 end
 
 function Procedural.hasPose(key: string): boolean
@@ -200,7 +214,14 @@ end
 	encaisse sans jamais paraître baisser les bras.
 ]]
 local function update()
+	Probe.beginFrame()
+	-- Relecture AVANT toute écriture : c'est ce décalage d'une frame qui rend un
+	-- écrasement détectable. Relire juste après avoir écrit ne prouverait rien,
+	-- puisque personne n'a encore eu l'occasion d'écraser.
+	Probe.readBack(Rig.joints())
+
 	if next(playing) == nil then
+		Probe.endFrame()
 		return
 	end
 
@@ -231,9 +252,13 @@ local function update()
 	for jointName, motor in Rig.joints() do
 		local average = blended[jointName]
 		if average then
-			motor.Transform = CFrame.identity:Lerp(average, math.min(weights[jointName], 1))
+			local value = CFrame.identity:Lerp(average, math.min(weights[jointName], 1))
+			motor.Transform = value
+			Probe.wrote(jointName, Rig.classOf(jointName), value)
 		end
 	end
+
+	Probe.endFrame()
 end
 
 function Procedural.Start()

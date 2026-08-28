@@ -44,6 +44,9 @@ local contentNames: { string } = {}
 
 -- Jointures posables du personnage courant, sous leur nom canonique.
 local current: { [string]: Joints.Joint } = {}
+-- Classe réelle de chacune, conservée en parallèle : le type réduit `Joint` ne
+-- la porte pas, et le diagnostic en a besoin.
+local classNames: { [string]: string } = {}
 -- Observation de l'assemblage, débranchée dès que le rig est complet. Un seul
 -- abonnement à la fois : un respawn remplace le précédent.
 local watcher: RBXScriptConnection? = nil
@@ -54,6 +57,15 @@ local generation = 0
 
 function Rig.joints(): { [string]: Joints.Joint }
 	return current
+end
+
+--[[
+	Classe réelle de la jointure, pour le diagnostic. `Joints.Joint` réduit une
+	jointure à son `Transform` et perd donc son type nominal : la sonde a besoin
+	de le retrouver pour dire sur QUOI elle écrit.
+]]
+function Rig.classOf(canonical: string): string
+	return classNames[canonical] or "inconnue"
 end
 
 --[[
@@ -130,9 +142,11 @@ end
 ]]
 function Rig.bind(character: Model): { [string]: Joints.Joint }
 	local motors: { [string]: Joints.Joint } = {}
+	local motorClasses: { [string]: string } = {}
 	for _, descendant in character:GetDescendants() do
 		if Joints.isPosable(descendant) then
 			motors[descendant.Name] = (descendant :: any) :: Joints.Joint
+			motorClasses[descendant.Name] = descendant.ClassName
 		end
 	end
 
@@ -141,12 +155,14 @@ function Rig.bind(character: Model): { [string]: Joints.Joint }
 	rigLabel = if humanoid == nil then "sans Humanoid" elseif isR6 then "R6" else "R15"
 
 	local joints: { [string]: Joints.Joint } = {}
+	table.clear(classNames)
 	table.clear(missingNames)
 	for _, canonical in Joints.required() do
 		local actual = Joints.nameFor(canonical, isR6)
 		local motor = if actual then motors[actual] else nil
 		if motor then
 			joints[canonical] = motor
+			classNames[canonical] = motorClasses[actual :: string]
 		else
 			table.insert(missingNames, canonical)
 		end

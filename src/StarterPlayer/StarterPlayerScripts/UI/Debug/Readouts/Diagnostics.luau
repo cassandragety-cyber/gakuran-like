@@ -134,6 +134,27 @@ local rows: { Format.Readout } = {
 	},
 	{
 		section = "Performance",
+		label = "Écriture pose",
+		read = function(_now: number): (string, Color3?)
+			--[[
+				La mesure AU POINT D'ÉCRITURE, et non une déduction à partir de
+				l'état amont. Elle sépare les trois cas que « personnage immobile »
+				confond : on n'écrit rien, on écrit l'identité, ou on écrit une vraie
+				valeur que quelque chose écrase ensuite.
+
+				Le « relu » est pris à la frame SUIVANTE, avant toute nouvelle
+				écriture : relire juste après avoir écrit ne prouverait rien.
+			]]
+			local writes, detail, overwritten = AnimationController.writeStatus()
+			if writes == 0 then
+				return detail, Theme.Colors.Accent
+			end
+			return string.format("%d · %s", writes, detail),
+				if overwritten then Theme.Colors.Accent else Theme.Colors.Good
+		end,
+	},
+	{
+		section = "Performance",
 		label = "Animations",
 		read = function(_now: number): (string, Color3?)
 			local loaded, procedural = AnimationController.counts()

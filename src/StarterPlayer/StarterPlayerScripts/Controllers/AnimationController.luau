@@ -225,6 +225,27 @@ function AnimationController.rigStatus(): (string, number, number, boolean)
 end
 
 --[[
+	Mesure au point d'écriture, relayée depuis `Animation/Probe`.
+
+	`writeStatus` alimente le panneau en continu ; `capture` journalise une ligne
+	par frame pendant quelques secondes, à déclencher depuis la barre de commande
+	du client :
+
+	    require(game.Players.LocalPlayer.PlayerScripts.Client.Controllers.AnimationController).capture(1)
+
+	Les deux répondent à la question que cinq allers-retours de recette n'ont pas
+	su trancher : écrit-on réellement sur une jointure, avec quelle valeur, et
+	qu'en reste-t-il à la frame suivante.
+]]
+function AnimationController.writeStatus(): (number, string, boolean)
+	return Procedural.writeStatus()
+end
+
+function AnimationController.capture(seconds: number?)
+	Procedural.capture(seconds or 1)
+end
+
+--[[
 	Attend l'`Humanoid`, puis lie.
 
 	On n'attend QUE l'`Humanoid`, et uniquement parce qu'il porte le type de rig

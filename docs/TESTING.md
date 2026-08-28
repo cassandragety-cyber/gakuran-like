@@ -861,6 +861,34 @@ Pour le vérifier, supprimer temporairement l'entrée `ParrySuccess` de
 `Animations.ParrySuccess n'a ni asset (id = 0), ni pose procédurale, ni entrée
 dans Poses.Pending`. Remettre l'entrée ensuite.
 
+#### T1.3.6b — Mesurer au point d'écriture
+
+À utiliser quand le rig est vert (`10/10`), qu'une pose est active, et que **rien
+ne bouge quand même**. C'est le seul test qui regarde l'écriture elle-même plutôt
+que d'en déduire l'état depuis l'amont.
+
+**F2 → Performance → « Écriture pose »**, en maintenant F :
+
+| Affichage | Ce que ça veut dire |
+|---|---|
+| `aucune jointure atteinte` (rouge) | Aucune écriture. La pose tourne mais ne rencontre aucune jointure : le problème est entre `Rig` et `Procedural`. |
+| `6 · RightShoulder (Motor6D) 72° → relu 72°` (vert) | On écrit une vraie valeur et **elle survit** à la frame. Si rien ne bouge malgré ça, le problème est en aval : la jointure écrite ne pilote pas le membre. |
+| `6 · RightShoulder (Motor6D) 72° → relu 0°` (rouge) | On écrit et **quelque chose écrase**. Presque toujours un ordre d'exécution : notre écriture passe avant celle de l'`Animator` au lieu d'après. |
+| `6 · … 0° → relu 0°` | On écrit l'**identité** : le mélange de poses produit un poids nul. Le problème est dans l'enveloppe temporelle, pas dans l'écriture. |
+
+Le « relu » est pris à la frame **suivante**, avant toute nouvelle écriture.
+Relire juste après avoir écrit ne prouverait rien : personne n'a encore eu
+l'occasion d'écraser.
+
+Pour une trace frame par frame, barre de commande **Client** :
+
+```lua
+require(game.Players.LocalPlayer.PlayerScripts.Client.Controllers.AnimationController).capture(1)
+```
+
+Une ligne `[PoseProbe]` par frame pendant une seconde, avec les mêmes quatre
+informations. Maintenir F **pendant** la capture.
+
 #### T1.3.7 — Ce qui n'est PAS encore visible
 
 En test à deux clients Studio : **la garde de l'autre joueur ne se voit pas**.
