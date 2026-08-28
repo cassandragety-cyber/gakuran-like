@@ -241,6 +241,10 @@ function AnimationController.writeStatus(): (number, string, boolean)
 	return Procedural.writeStatus()
 end
 
+function AnimationController.rigDrivable(): (string, boolean)
+	return Procedural.drivable()
+end
+
 function AnimationController.renderFrames(): number
 	return Procedural.renderFrames()
 end

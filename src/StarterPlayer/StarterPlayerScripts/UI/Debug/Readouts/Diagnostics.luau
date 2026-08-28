@@ -126,19 +126,26 @@ local rows: { Format.Readout } = {
 				return "moteur de pose non démarré", Theme.Colors.Accent
 			end
 			--[[
-				Trois pannes se ressemblent à l'écran — personnage immobile — et ne
-				se corrigent pas au même endroit : rig non lié, pose non déclenchée,
-				pose déclenchée sans jointure où l'écrire. Cette ligne les sépare.
+				Quatre pannes donnent le même personnage immobile et ne se corrigent
+				pas au même endroit : rig non lié, jointures absentes, jointures
+				présentes mais d'une classe qu'on ne pilote pas, boucle de rendu
+				morte. Cette ligne sépare les trois premières.
 
-				Zéro jointure posable est la panne qui a coûté la recette de la
-				1.3 : une place réglée en R6 alors que les poses sont écrites en
-				noms R15.
+				La classe fait donc partie du diagnostic, pas du détail : un rig peut
+				résoudre 10/10 sans être pilotable, et afficher ce compte en vert est
+				le mensonge qui a coûté sept allers-retours.
 			]]
+			local class, drivable = AnimationController.rigDrivable()
+			if resolved > 0 and not drivable then
+				return string.format("%s · %d/%d %s NON PILOTABLE", rig, resolved, required, class),
+					Theme.Colors.Accent
+			end
+
 			local color = if resolved == 0
 				then Theme.Colors.Accent
 				elseif resolved < required then Theme.Colors.Warning
 				else Theme.Colors.Good
-			return string.format("%s · %d/%d jointures", rig, resolved, required), color
+			return string.format("%s · %d/%d %s", rig, resolved, required, class), color
 		end,
 	},
 	{

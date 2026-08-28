@@ -704,6 +704,38 @@ d'une latence, et toute demande de garde tombant dans cet intervalle est refusé
 Le nouvel essai la rattrape ; l'ancrage la supprimerait à la source. Décision à
 prendre en 1.4, désormais documentée par une observation et non par une intuition.
 
+**Cinquième et dernière cause : la classe des jointures n'est pas pilotable par
+cette voie.** Le rig standard n'utilise plus de `Motor6D` mais des
+`AnimationConstraint`. Elles exposent bien un `Transform`, donc elles passaient
+le test de capacité et se recensaient `10/10` — mais écrire ce `Transform` au
+render step ne déplace rien. Mesuré, pas supposé : valeurs nominales pleines
+(85° sur un coude), relues intactes à la frame suivante, zéro mouvement. Une
+contrainte est résolue par la physique, pas par la couche d'animation où l'on
+écrit.
+
+**Décision (validée avec le produit) : `StarterPlayer.AvatarJointUpgrade =
+"Disabled"`** dans `default.project.json`. Une ligne, versionnée, reproductible
+sur toute machine qui clone — pas un réglage Studio à réexpliquer. Le rig
+redevient `Motor6D` et tout le code existant fonctionne sans modification.
+
+C'est un réglage de **développement**, et il est daté : les vraies animations
+uploadées (option D du plan) restent la fin de l'histoire, prévues pour la
+tranche 1.7. Elles absorberont au passage la dette « la garde adverse est
+invisible », puisqu'un `AnimationTrack` joué en local sur son propre personnage
+se réplique — ce que l'écriture directe de jointures ne fera jamais.
+
+**Écarté pour l'instant :** `AnimationConstraint.IsKinematic` (piste notée, non
+urgente) et la génération de `KeyframeSequence` au runtime (API existante mais
+non vérifiée, et son identifiant serait probablement local au client, donc sans
+bénéfice de réplication).
+
+**LE GARDE-FOU.** `Joints` distingue désormais les classes *recensables* des
+classes *pilotables*, et cette distinction est **mesurée**, pas déduite. Un rig
+dont les jointures ne sont pas pilotables produit une erreur au boot qui nomme la
+correction, et le panneau affiche `NON PILOTABLE` en rouge au lieu d'un `10/10`
+vert. Sans ça, « posable » et « effectivement déplaçable » se confondaient, et le
+diagnostic annonçait un succès devant un personnage immobile.
+
 **Le vrai enseignement est sur le diagnostic, pas sur les jointures.** Trois
 hypothèses successives — nommage R6, course de réplication, classe de jointure —
 dont deux fausses, et trois allers-retours de recette. À chaque fois le

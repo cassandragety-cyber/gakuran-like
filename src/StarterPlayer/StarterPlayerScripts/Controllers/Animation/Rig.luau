@@ -47,6 +47,9 @@ local current: { [string]: Joints.Joint } = {}
 -- Classe réelle de chacune, conservée en parallèle : le type réduit `Joint` ne
 -- la porte pas, et le diagnostic en a besoin.
 local classNames: { [string]: string } = {}
+-- Classe des jointures effectivement résolues. Une seule suffit : un rig mélange
+-- rarement les familles, et c'est elle qui décide si la voie d'écriture marche.
+local resolvedClass = ""
 -- Observation de l'assemblage, débranchée dès que le rig est complet. Un seul
 -- abonnement à la fois : un respawn remplace le précédent.
 local watcher: RBXScriptConnection? = nil
@@ -59,11 +62,8 @@ function Rig.joints(): { [string]: Joints.Joint }
 	return current
 end
 
---[[
-	Classe réelle de la jointure, pour le diagnostic. `Joints.Joint` réduit une
-	jointure à son `Transform` et perd donc son type nominal : la sonde a besoin
-	de le retrouver pour dire sur QUOI elle écrit.
-]]
+-- `Joints.Joint` réduit une jointure à son `Transform` et perd son type nominal ;
+-- la sonde a besoin de le retrouver pour dire sur QUOI elle écrit.
 function Rig.classOf(canonical: string): string
 	return classNames[canonical] or "inconnue"
 end
@@ -75,6 +75,17 @@ end
 ]]
 function Rig.diagnose(): (string, number, number)
 	return rigLabel, resolvedCount, Joints.requiredCount()
+end
+
+-- Distincte de « le rig est complet » : on peut résoudre 10/10 jointures qu'on
+-- ne sait pas piloter, et confondre les deux affiche un succès devant un
+-- personnage immobile.
+function Rig.isDrivable(): boolean
+	return resolvedClass ~= "" and Joints.isDrivable(resolvedClass)
+end
+
+function Rig.jointClass(): string
+	return if resolvedClass == "" then "aucune" else resolvedClass
 end
 
 function Rig.isComplete(): boolean
@@ -111,12 +122,35 @@ function Rig.report()
 			)
 			Log.warn(SCOPE, `classes de jointure acceptées : {Joints.acceptedClasses}`)
 		end
+	elseif not Rig.isDrivable() then
+		--[[
+			LE GARDE-FOU.
+
+			Des jointures sont résolues, le compte peut même être complet — et
+			pourtant rien ne bougera : notre voie d'écriture ne pilote pas cette
+			classe. Sans ce cas, le rapport annonçait un succès (`10/10`) devant un
+			personnage parfaitement immobile, et c'est ce mensonge-là qui a coûté
+			sept allers-retours de recette.
+
+			Le message porte la correction, pas seulement le constat : un diagnostic
+			qui ne dit pas quoi faire déplace le travail sur celui qui le lit.
+		]]
+		Log.error(
+			SCOPE,
+			`rig {rigLabel} : {resolvedCount} jointure(s) de classe {resolvedClass}, `
+				.. `que cette voie d'écriture NE DÉPLACE PAS. Le combat fonctionnera `
+				.. `entièrement — dégâts, verdicts, états — avec un personnage immobile. `
+				.. `Seules les classes suivantes sont pilotables : {Joints.drivableClasses}. `
+				.. `Correction : StarterPlayer.AvatarJointUpgrade = "Disabled" dans `
+				.. `default.project.json (déjà appliqué sur ce dépôt — si vous lisez ceci, `
+				.. `la place n'a pas repris le réglage : reconnectez Rojo et relancez).`
+		)
 	elseif #missingNames > 0 then
 		-- Attendu sur R6, et sans gravité : l'absence de coudes et de taille prive
 		-- la pose de son pliage, pas de sa silhouette générale.
 		Log.warn(
 			SCOPE,
-			`rig {rigLabel} : {resolvedCount}/{Joints.requiredCount()} jointures posables, absentes = {table.concat(
+			`rig {rigLabel} ({resolvedClass}) : {resolvedCount}/{Joints.requiredCount()} jointures posables, absentes = {table.concat(
 				missingNames,
 				", "
 			)}`
@@ -124,7 +158,7 @@ function Rig.report()
 	else
 		Log.info(
 			SCOPE,
-			`rig {rigLabel} : {resolvedCount}/{Joints.requiredCount()} jointures posables`
+			`rig {rigLabel} ({resolvedClass}) : {resolvedCount}/{Joints.requiredCount()} jointures posables`
 		)
 	end
 end
@@ -155,6 +189,7 @@ function Rig.bind(character: Model): { [string]: Joints.Joint }
 	rigLabel = if humanoid == nil then "sans Humanoid" elseif isR6 then "R6" else "R15"
 
 	local joints: { [string]: Joints.Joint } = {}
+	resolvedClass = ""
 	table.clear(classNames)
 	table.clear(missingNames)
 	for _, canonical in Joints.required() do
@@ -162,7 +197,9 @@ function Rig.bind(character: Model): { [string]: Joints.Joint }
 		local motor = if actual then motors[actual] else nil
 		if motor then
 			joints[canonical] = motor
-			classNames[canonical] = motorClasses[actual :: string]
+			local className = motorClasses[actual :: string]
+			classNames[canonical] = className
+			resolvedClass = className
 		else
 			table.insert(missingNames, canonical)
 		end

@@ -53,6 +53,23 @@ dépôt : `Packages/` (partagé → `ReplicatedStorage.Packages`) et
 `ServerPackages/` (réservé serveur → `ServerScriptService.ServerPackages`).
 ProfileStore, déclaré `realm = "server"`, atterrit dans le second.
 
+## Le rig doit rester en `Motor6D`
+
+`default.project.json` force `StarterPlayer.AvatarJointUpgrade = "Disabled"`.
+
+Ce n'est pas cosmétique. Les rigs récents articulent le personnage avec des
+`AnimationConstraint`, résolues par le moteur physique. Le repli d'animation
+procédural (ADR-009, ADR-018) écrit `Transform` au moment du rendu : sur une
+contrainte, cette écriture est acceptée, se relit intacte… et ne déplace rien.
+Le combat tourne alors entièrement — dégâts, verdicts, jauge de garde — devant
+un personnage parfaitement immobile.
+
+Le réglage est **de développement**, et daté : les vraies animations uploadées
+(tranche 1.7) rendront la question sans objet, et régleront au passage la
+visibilité de la garde adverse. En attendant, un rig non pilotable produit une
+erreur explicite au boot et un `NON PILOTABLE` rouge dans le panneau F2 — jamais
+un silence.
+
 ## Développer
 
 ```bash

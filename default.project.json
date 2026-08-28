@@ -20,6 +20,9 @@
 		},
 
 		"StarterPlayer": {
+			"$properties": {
+				"AvatarJointUpgrade": "Disabled"
+			},
 			"StarterPlayerScripts": {
 				"Client": { "$path": "src/StarterPlayer/StarterPlayerScripts" }
 			}

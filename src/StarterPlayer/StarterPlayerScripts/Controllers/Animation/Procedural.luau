@@ -51,11 +51,8 @@ local Procedural = {}
 local playing: { [string]: Playing } = {}
 local bound = false
 
---[[
-	Lie le personnage. Le recensement des jointures, sa mise à jour pendant
-	l'assemblage et son diagnostic appartiennent à `Rig` : ici on ne remet à zéro
-	que ce qui est en cours de lecture.
-]]
+-- Le recensement des jointures et son diagnostic appartiennent à `Rig` : ici on
+-- ne remet à zéro que ce qui est en cours de lecture.
 function Procedural.bindCharacter(character: Model)
 	table.clear(playing)
 	Rig.bindCharacter(character)
@@ -72,11 +69,13 @@ function Procedural.diagnose(): (string, number, number, boolean)
 	return rigLabel, resolved, required, bound
 end
 
---[[
-	Démarre une capture journalisée au point d'écriture. Une ligne par frame :
-	combien de jointures ont été écrites, laquelle sert de témoin, l'angle écrit,
-	et ce qu'il en restait à la frame suivante.
-]]
+-- Classe de jointure du rig, et si notre voie d'écriture la déplace. Le panneau
+-- s'en sert pour ne jamais afficher un succès sur un rig qu'on ne pilote pas.
+function Procedural.drivable(): (string, boolean)
+	return Rig.jointClass(), Rig.isDrivable()
+end
+
+-- Capture journalisée au point d'écriture : une ligne par frame.
 function Procedural.capture(seconds: number)
 	Probe.capture(seconds)
 end

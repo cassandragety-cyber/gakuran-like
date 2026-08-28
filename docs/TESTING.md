@@ -827,7 +827,8 @@ Ces trois refus sont **prédits localement** : rien ne part sur le réseau. La l
 
 | Ce qu'elle affiche | Ce que ça veut dire |
 |---|---|
-| `R15 · 10/10` (vert) | Tout est posable. |
+| `R15 · 10/10 Motor6D` (vert) | Tout est posable et pilotable. |
+| `R15 · 10/10 AnimationConstraint NON PILOTABLE` (rouge) | Les jointures existent mais cette voie d'écriture ne les déplace pas. La place n'a pas repris `StarterPlayer.AvatarJointUpgrade = "Disabled"` : reconnecter Rojo et relancer. L'Output porte la même erreur avec sa correction. |
 | `R6 · 5/10` (orange) | Place réglée en R6. Les poses se jouent, mais **sans coudes ni taille** : les bras montent sans se replier. Lisible, moins expressif. Pour repasser en R15 : **Game Settings → Avatar → Avatar Type → R15**. |
 | `… · 0/10` (rouge) | Aucune jointure ne résout — rien ne bougera. L'Output porte alors **le contenu du personnage** (nom et classe de chaque enfant) et la liste des classes de jointure acceptées : de quoi trancher entre un mauvais modèle, un modèle vide et une classe de jointure inconnue. |
 | `moteur de pose non démarré` | `BindToRenderStep` n'a pas été posé : la panne est dans le chargement du contrôleur, pas dans le rig. |
