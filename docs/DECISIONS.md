@@ -632,36 +632,52 @@ la surface testable est en solo contre des mannequins sans rig ; bloquant en 1.4
 où lire la garde adverse *est* la mécanique. C'est le premier point de la 1.4,
 détaillé dans PHASE1.md §5 — déclaré plutôt que découvert.
 
-### Amendement — le rig, et le coût d'une dégradation qui ressemble à une panne
+### Amendement — la sentinelle devinée, et deux recettes perdues
 
-La première recette de la tranche 1.3 a échoué sur ce point précis : **aucune
-pose ne s'affichait**, ni garde ni coups, alors que toute la logique serveur
+La tranche 1.3 a échoué deux fois en recette sur le même symptôme : **aucune pose
+ne s'affichait**, ni garde ni coups, alors que toute la logique serveur
 fonctionnait — dégâts réduits, jauge qui descend, `Blocking` sur le mannequin.
 
-Cause : les poses sont écrites en noms de jointures **R15**, qui font référence.
-Un rig **R6** nomme les siennes autrement — avec des espaces — et n'a ni taille,
-ni coudes, ni poignets, ni genoux. Sur une place réglée en R6, les poses
-d'attaque ne résolvaient donc **aucune** jointure, et la garde une seule : un
-tilt de tête de 10°, invisible.
+**Cause réelle : un scan unique qui court après un personnage encore en train
+d'arriver.** Un personnage Roblox est parenté à `workspace` **avant** que ses
+membres n'aient fini de répliquer, et les `Motor6D` vivent dans les membres. Le
+recensement gagnait donc la course une fois sur deux et la perdait le reste du
+temps, laissant zéro jointure pour toute la vie du personnage.
 
-Le code faisait exactement ce que son commentaire annonçait — « chaque jointure
-absente est ignorée, aucune erreur ». C'était le défaut : **j'avais documenté un
-échec silencieux et je l'avais pris pour de la robustesse.** Le projet interdit
-les chemins qui échouent sans rien dire ; une dégradation acceptable en est un
-dès lors qu'elle est indiscernable d'une panne totale.
+Le plus instructif est que **j'avais identifié le bon danger et je m'en suis
+protégé avec une garantie inventée.** Le commentaire disait :
 
-**Correctif, en deux temps.** `Animation/Rig` traduit les noms canoniques vers le
-rig réel, si bien que R6 joue désormais ce qu'il peut jouer — épaules, hanches,
-nuque — au lieu de rien. Et surtout, il **compte** : `n/N jointures posables`,
-journalisé au bind, affiché en permanence dans F2. Zéro résolu déclenche un
-`Log.error` qui nomme les jointures réellement présentes sur le rig.
+> `HumanoidRootPart` est le dernier élément structurel à arriver ; quand il est
+> là, les jointures le sont aussi.
 
-La règle générale que ça pose, et qui vaut au-delà de l'animation : **une
+C'est faux : `Humanoid` et `HumanoidRootPart` sont parmi les **premiers**. J'ai
+écrit une affirmation sur le runtime, je l'ai formulée avec l'assurance d'un
+invariant vérifié, et rien dans la chaîne de qualité ne pouvait la contredire —
+ni les types, ni le lint, ni le boot. La leçon est plus dure que celle
+d'ADR-016 : **un commentaire qui énonce un invariant que rien ne vérifie est une
+dette, pas une documentation.**
+
+**Correctif.** On n'attend plus un instant, on observe : `Rig.bindCharacter`
+réindexe à chaque `Motor6D` qui apparaît et se débranche dès que le compte est
+bon. Rig-agnostique, sans sentinelle à deviner — la seule preuve qu'une jointure
+est là, c'est qu'elle est là. Un filet différé annonce l'état atteint au bout de
+5 s pour le cas où le compte complet n'arrive jamais.
+
+**Correctif adjacent, trouvé pendant l'enquête.** Les poses sont écrites en noms
+de jointures R15 ; un rig R6 nomme les siennes autrement et n'a ni taille, ni
+coudes. Le code faisait alors exactement ce que son commentaire annonçait —
+« chaque jointure absente est ignorée, aucune erreur » — c'est-à-dire **un échec
+silencieux documenté comme de la robustesse**. `Rig` traduit désormais les noms,
+si bien que R6 joue ce qu'il peut au lieu de rien.
+
+La règle générale que tout ça pose, et qui vaut au-delà de l'animation : **une
 dégradation acceptable et une panne ne doivent jamais produire le même signal.**
-Trois causes donnaient ici le même personnage immobile — rig sans jointures, pose
-non déclenchée, boucle de rendu non démarrée — et ne se corrigent pas au même
-endroit. Le panneau les sépare maintenant en une ligne, ce qui aurait transformé
-une recette perdue en une lecture de dix secondes.
+Quatre causes donnaient ici le même personnage immobile — rig pas encore
+assemblé, rig sans jointures compatibles, pose non déclenchée, boucle de rendu
+non démarrée — et ne se corrigent pas au même endroit. La ligne « Rig posable »
+du panneau les sépare maintenant d'un coup d'œil, et c'est elle qui a permis de
+trancher : `R15 · 0/10` disait à la fois que le rig était bon et que le
+recensement avait échoué, ce qu'aucun autre indicateur ne pouvait dire.
 
 ---
 

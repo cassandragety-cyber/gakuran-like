@@ -225,24 +225,23 @@ function AnimationController.rigStatus(): (string, number, number, boolean)
 end
 
 --[[
-	Attend que le rig soit monté, puis lie.
+	Attend l'`Humanoid`, puis lie.
 
-	Le personnage est parenté à `workspace` AVANT ses descendants : lier
-	immédiatement recenserait zéro Motor6D, et toutes les poses procédurales
-	seraient silencieuses pour cette vie du personnage — sans erreur, sans trace.
-	C'est le genre de défaut qu'on met une soirée à relier à sa cause.
+	On n'attend QUE l'`Humanoid`, et uniquement parce qu'il porte le type de rig
+	et l'`Animator`. On n'attend surtout pas les jointures : elles vivent dans les
+	membres, qui arrivent après, et aucune pièce du personnage ne permet de
+	conclure qu'elles sont toutes là. La version précédente attendait
+	`HumanoidRootPart` en le croyant dernier arrivé — il est parmi les premiers —
+	et recensait donc régulièrement zéro `Motor6D`, pour toute la vie du
+	personnage.
 
-	`HumanoidRootPart` est le dernier élément structurel à arriver ; quand il est
-	là, les jointures le sont aussi.
+	C'est `Procedural.bindCharacter` qui règle la course, en réindexant à chaque
+	jointure qui apparaît plutôt qu'en pariant sur un instant.
 ]]
 local function bindWhenReady(character: Model)
 	task.spawn(function()
 		if character:WaitForChild("Humanoid", 10) == nil then
 			Log.warn(SCOPE, "personnage sans Humanoid après 10 s, animations inactives")
-			return
-		end
-		if character:WaitForChild("HumanoidRootPart", 10) == nil then
-			Log.warn(SCOPE, "personnage sans HumanoidRootPart après 10 s, animations inactives")
 			return
 		end
 		-- Le personnage a pu être remplacé pendant l'attente (mort rapide,

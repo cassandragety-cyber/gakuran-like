@@ -44,8 +44,29 @@ local R6_ALIASES: { [string]: string } = {
 
 local Rig = {}
 
+-- Délai au bout duquel on annonce l'état du rig même s'il n'a jamais atteint le
+-- compte complet. Assez long pour couvrir un chargement lent, assez court pour
+-- que le diagnostic arrive pendant qu'on regarde encore l'Output.
+local REPORT_DELAY = 5
+
 local rigLabel = "aucun rig"
 local resolvedCount = 0
+local missingNames: { string } = {}
+local presentNames: { string } = {}
+
+-- Jointures posables du personnage courant, sous leur nom canonique.
+local current: { [string]: Motor6D } = {}
+-- Observation de l'assemblage, débranchée dès que le rig est complet. Un seul
+-- abonnement à la fois : un respawn remplace le précédent.
+local watcher: RBXScriptConnection? = nil
+-- Incrémenté à chaque liaison. Un rapport différé appartenant au personnage
+-- précédent se reconnaît à sa génération périmée et s'abstient — sans quoi une
+-- mort rapide couperait l'observation du personnage suivant.
+local generation = 0
+
+function Rig.joints(): { [string]: Motor6D }
+	return current
+end
 
 --[[
 	Jointures citées par au moins une pose.
@@ -82,13 +103,53 @@ function Rig.diagnose(): (string, number, number)
 	return rigLabel, resolvedCount, #REQUIRED
 end
 
+function Rig.isComplete(): boolean
+	return resolvedCount == #REQUIRED
+end
+
+--[[
+	Journalise l'état de la dernière liaison, une fois.
+
+	Séparé de `bind` parce que `bind` est rejoué à chaque `Motor6D` qui apparaît
+	pendant l'assemblage du personnage : journaliser depuis `bind` produirait une
+	ligne par membre répliqué, et la seule qui compte — l'état final — serait
+	noyée dans le bruit qui la précède.
+]]
+function Rig.report()
+	if resolvedCount == 0 then
+		Log.error(
+			SCOPE,
+			`rig {rigLabel} : aucune jointure des poses n'existe sur ce personnage. `
+				.. `Le combat fonctionnera — dégâts, verdicts, états — sans que rien ne bouge. `
+				.. `Jointures du rig : {if #presentNames == 0
+					then "aucune"
+					else table.concat(presentNames, ", ")}`
+		)
+	elseif #missingNames > 0 then
+		-- Attendu sur R6, et sans gravité : l'absence de coudes et de taille prive
+		-- la pose de son pliage, pas de sa silhouette générale.
+		Log.warn(
+			SCOPE,
+			`rig {rigLabel} : {resolvedCount}/{#REQUIRED} jointures posables, absentes = {table.concat(
+				missingNames,
+				", "
+			)}`
+		)
+	else
+		Log.info(SCOPE, `rig {rigLabel} : {resolvedCount}/{#REQUIRED} jointures posables`)
+	end
+end
+
 --[[
 	Indexe les Motor6D du personnage sous les noms canoniques des poses.
 
-	Retourne une table vide plutôt que nil quand rien ne résout : l'appelant
-	écrit alors dans le vide sans cas particulier, et c'est le journal qui porte
-	l'alerte. Un `nil` obligerait chaque appelant à retester ce que ce module a
-	déjà constaté.
+	**Ne journalise rien et peut être rejouée à volonté** : c'est ce qui permet à
+	l'appelant de la relancer à chaque jointure qui apparaît, le temps que le
+	personnage finisse de se répliquer. Voir `Procedural.bindCharacter`.
+
+	Retourne une table vide plutôt que nil quand rien ne résout : l'appelant écrit
+	alors dans le vide sans cas particulier. Un `nil` obligerait chaque appelant à
+	retester ce que ce module a déjà constaté.
 ]]
 function Rig.bind(character: Model): { [string]: Motor6D }
 	local motors: { [string]: Motor6D } = {}
@@ -103,50 +164,87 @@ function Rig.bind(character: Model): { [string]: Motor6D }
 	rigLabel = if humanoid == nil then "sans Humanoid" elseif isR6 then "R6" else "R15"
 
 	local joints: { [string]: Motor6D } = {}
-	local missing: { string } = {}
+	table.clear(missingNames)
 	for _, canonical in REQUIRED do
 		local actual = if isR6 then R6_ALIASES[canonical] else canonical
 		local motor = if actual then motors[actual] else nil
 		if motor then
 			joints[canonical] = motor
 		else
-			table.insert(missing, canonical)
+			table.insert(missingNames, canonical)
 		end
 	end
-	resolvedCount = #REQUIRED - #missing
+	resolvedCount = #REQUIRED - #missingNames
 
-	if resolvedCount == 0 then
-		local present: { string } = {}
-		for name in motors do
-			table.insert(present, name)
-		end
-		table.sort(present)
-
-		Log.error(
-			SCOPE,
-			`rig {rigLabel} : aucune jointure des poses n'existe sur ce personnage. `
-				.. `Le combat fonctionnera — dégâts, verdicts, états — sans que rien ne bouge. `
-				.. `Jointures du rig : {if #present == 0
-					then "aucune"
-					else table.concat(present, ", ")}`
-		)
-		return joints
+	-- Retenu pour le rapport : quand rien ne résout, la seule question utile est
+	-- « alors qu'est-ce qu'il Y A sur ce rig ? ».
+	table.clear(presentNames)
+	for name in motors do
+		table.insert(presentNames, name)
 	end
+	table.sort(presentNames)
 
-	if #missing > 0 then
-		-- Attendu sur R6, et sans gravité : l'absence de coudes et de taille prive
-		-- la pose de son pliage, pas de sa silhouette générale.
-		Log.warn(
-			SCOPE,
-			`rig {rigLabel} : {resolvedCount}/{#REQUIRED} jointures posables, absentes = {table.concat(
-				missing,
-				", "
-			)}`
-		)
-	else
-		Log.info(SCOPE, `rig {rigLabel} : {resolvedCount}/{#REQUIRED} jointures posables`)
-	end
 	return joints
+end
+
+--[[
+	Lie un personnage, et **continue** de le recenser tant qu'il s'assemble.
+
+	Un personnage Roblox est parenté à `workspace` AVANT que ses membres n'aient
+	fini d'arriver, et `Humanoid` comme `HumanoidRootPart` sont parmi les tout
+	premiers. Attendre l'un d'eux ne prouve donc rien sur les `Motor6D`, qui
+	vivent dans les membres : un scan unique gagne la course une fois sur deux et
+	la perd le reste du temps, laissant zéro jointure pour toute la vie du
+	personnage. C'est ce qui a produit `R15 · 0/10` sur un rig pourtant complet
+	une fraction de seconde plus tard, et c'est le défaut que cette fonction
+	existe pour rendre impossible.
+
+	D'où l'observation plutôt que l'attente : on réindexe à chaque `Motor6D` qui
+	apparaît et on se débranche dès que le compte est bon. Rig-agnostique, sans
+	sentinelle à deviner — la seule preuve qu'une jointure est là, c'est qu'elle
+	est là.
+]]
+function Rig.bindCharacter(character: Model)
+	if watcher then
+		watcher:Disconnect()
+		watcher = nil
+	end
+	generation += 1
+	local mine = generation
+
+	current = Rig.bind(character)
+	if Rig.isComplete() then
+		Rig.report()
+		return
+	end
+
+	watcher = character.DescendantAdded:Connect(function(descendant: Instance)
+		if not descendant:IsA("Motor6D") then
+			return
+		end
+		current = Rig.bind(character)
+		if Rig.isComplete() and watcher then
+			watcher:Disconnect()
+			watcher = nil
+			Rig.report()
+		end
+	end)
+
+	--[[
+		Filet de sécurité : un rig qui n'atteint jamais le compte complet — un R6,
+		ou un personnage réellement incomplet — ne déclencherait aucun rapport. On
+		annonce donc l'état atteint après un délai, une seule fois. Sans ça, le cas
+		« toujours zéro jointure » resterait muet, c'est-à-dire indiscernable de
+		celui où tout va bien.
+	]]
+	task.delay(REPORT_DELAY, function()
+		if mine ~= generation or watcher == nil then
+			return
+		end
+		watcher:Disconnect()
+		watcher = nil
+		Rig.report()
+	end)
 end
 
 return Rig

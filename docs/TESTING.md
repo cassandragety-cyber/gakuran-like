@@ -817,23 +817,22 @@ Ces trois refus sont **prédits localement** : rien ne part sur le réseau. La l
 #### T1.3.6 — Le repli procédural couvre tout ce qui est atteignable
 
 **À regarder en premier : F2 → Performance → « Rig posable ».** Elle affiche
-`R15 · 14/14 jointures` sur un rig complet.
+`R15 · 10/10 jointures` sur un rig complet.
 
 | Ce qu'elle affiche | Ce que ça veut dire |
 |---|---|
-| `R15 · 14/14` (vert) | Tout est posable. |
-| `R6 · 5/14` (orange) | Place réglée en R6. Les poses se jouent, mais **sans coudes ni taille** : les bras montent sans se replier. Lisible, moins expressif. |
-| `… · 0/14` (rouge) | Aucune jointure ne résout — rien ne bougera. L'Output porte la liste des jointures réellement présentes. |
+| `R15 · 10/10` (vert) | Tout est posable. |
+| `R6 · 5/10` (orange) | Place réglée en R6. Les poses se jouent, mais **sans coudes ni taille** : les bras montent sans se replier. Lisible, moins expressif. Pour repasser en R15 : **Game Settings → Avatar → Avatar Type → R15**. |
+| `… · 0/10` (rouge) | Aucune jointure ne résout — rien ne bougera. L'Output porte la liste des jointures réellement présentes sur le rig. |
 | `moteur de pose non démarré` | `BindToRenderStep` n'a pas été posé : la panne est dans le chargement du contrôleur, pas dans le rig. |
 
-Les trois pannes donnent le **même** symptôme à l'écran — un personnage immobile
-— et ne se corrigent pas au même endroit. C'est exactement ce qui a coûté la
-première recette de cette tranche : les poses sont écrites en noms de jointures
-R15, une place en R6 n'en résolvait aucune pour les coups, et rien ne le disait.
+Ces situations donnent le **même** symptôme à l'écran — un personnage immobile —
+et ne se corrigent pas au même endroit. C'est ce qui a coûté deux recettes de
+cette tranche.
 
-Pour passer une place en R15 : **Game Settings → Avatar → Avatar Type → R15**,
-puis relancer le test. Les poses sont écrites pour R15 ; R6 fonctionne en
-dégradé.
+Une ligne `[Rig]` apparaît dans l'Output **une fois par personnage**, au moment
+où le rig atteint son compte complet, ou au plus tard 5 s après la liaison. Son
+absence est en soi un signal : la liaison n'a jamais eu lieu.
 
 Ensuite, **F2 → Performance → « Animations »** : affiche `0 asset(s) · N pose(s)
 active(s)`. Zéro asset est l'état **normal** aujourd'hui — `Config/Animations` ne

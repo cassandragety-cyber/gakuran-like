@@ -51,19 +51,17 @@ type Playing = {
 
 local Procedural = {}
 
--- Indexées par nom CANONIQUE (R15), quel que soit le rig réel : `update` n'a
--- ainsi jamais à savoir sur quoi il écrit. `Rig` fait la traduction.
-local joints: { [string]: Motor6D } = {}
 local playing: { [string]: Playing } = {}
 local bound = false
 
 --[[
-	Recense les jointures posables du personnage. La traduction des noms et le
-	diagnostic vivent dans `Rig` : ici on ne fait que retenir le résultat.
+	Lie le personnage. Le recensement des jointures, sa mise à jour pendant
+	l'assemblage et son diagnostic appartiennent à `Rig` : ici on ne remet à zéro
+	que ce qui est en cours de lecture.
 ]]
 function Procedural.bindCharacter(character: Model)
 	table.clear(playing)
-	joints = Rig.bind(character)
+	Rig.bindCharacter(character)
 end
 
 --[[
@@ -216,7 +214,7 @@ local function update()
 		end
 	end
 
-	for jointName, motor in joints do
+	for jointName, motor in Rig.joints() do
 		local average = blended[jointName]
 		if average then
 			motor.Transform = CFrame.identity:Lerp(average, math.min(weights[jointName], 1))
