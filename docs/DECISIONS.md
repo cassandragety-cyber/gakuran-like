@@ -670,6 +670,27 @@ coudes. Le code faisait alors exactement ce que son commentaire annonçait —
 silencieux documenté comme de la robustesse**. `Rig` traduit désormais les noms,
 si bien que R6 joue ce qu'il peut au lieu de rien.
 
+**Troisième cause, la bonne.** Ni R6, ni la course de réplication : le rig
+n'avait **aucun `Motor6D`**, parce que ses jointures sont des
+`AnimationConstraint`. Chercher une classe précise ne trouvait donc rien du tout
+— pas « des noms qui ne correspondent pas », rien.
+
+Le correctif ne consiste pas à ajouter une classe à une liste, mais à changer le
+critère : une jointure est posable si elle **expose un `Transform` de type
+`CFrame`**, ce qui est exactement ce dont le moteur de pose se sert. La liste de
+classes n'est plus qu'un filtre rapide, et la capacité est **testée** au
+recensement plutôt que supposée. Ce critère survivra à la prochaine classe de
+jointure ; une liste ne l'aurait pas fait.
+
+**Le vrai enseignement est sur le diagnostic, pas sur les jointures.** Trois
+hypothèses successives — nommage R6, course de réplication, classe de jointure —
+dont deux fausses, et trois allers-retours de recette. À chaque fois le
+diagnostic disait « aucune jointure » sans dire *ce qu'il y avait à la place*.
+Un diagnostic qui ne tranche pas ne fait pas gagner de temps, il déplace le coût
+sur celui qui teste. Le rapport nomme désormais, quand rien ne résout, le contenu
+complet du personnage et les classes acceptées : la prochaine cause de ce
+symptôme, quelle qu'elle soit, se lira en une ligne.
+
 La règle générale que tout ça pose, et qui vaut au-delà de l'animation : **une
 dégradation acceptable et une panne ne doivent jamais produire le même signal.**
 Quatre causes donnaient ici le même personnage immobile — rig pas encore
