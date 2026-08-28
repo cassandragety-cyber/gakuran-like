@@ -816,9 +816,29 @@ Ces trois refus sont **prédits localement** : rien ne part sur le réseau. La l
 
 #### T1.3.6 — Le repli procédural couvre tout ce qui est atteignable
 
-Panneau **F2 → Performance → « Animations »** : affiche `0 asset(s) · N pose(s)
+**À regarder en premier : F2 → Performance → « Rig posable ».** Elle affiche
+`R15 · 14/14 jointures` sur un rig complet.
+
+| Ce qu'elle affiche | Ce que ça veut dire |
+|---|---|
+| `R15 · 14/14` (vert) | Tout est posable. |
+| `R6 · 5/14` (orange) | Place réglée en R6. Les poses se jouent, mais **sans coudes ni taille** : les bras montent sans se replier. Lisible, moins expressif. |
+| `… · 0/14` (rouge) | Aucune jointure ne résout — rien ne bougera. L'Output porte la liste des jointures réellement présentes. |
+| `moteur de pose non démarré` | `BindToRenderStep` n'a pas été posé : la panne est dans le chargement du contrôleur, pas dans le rig. |
+
+Les trois pannes donnent le **même** symptôme à l'écran — un personnage immobile
+— et ne se corrigent pas au même endroit. C'est exactement ce qui a coûté la
+première recette de cette tranche : les poses sont écrites en noms de jointures
+R15, une place en R6 n'en résolvait aucune pour les coups, et rien ne le disait.
+
+Pour passer une place en R15 : **Game Settings → Avatar → Avatar Type → R15**,
+puis relancer le test. Les poses sont écrites pour R15 ; R6 fonctionne en
+dégradé.
+
+Ensuite, **F2 → Performance → « Animations »** : affiche `0 asset(s) · N pose(s)
 active(s)`. Zéro asset est l'état **normal** aujourd'hui — `Config/Animations` ne
-contient que des `0`.
+contient que des `0`. Si cette ligne compte des poses actives alors que rien ne
+bouge à l'écran, la panne est dans « Rig posable », pas dans le déclenchement.
 
 Vérifier que chaque état atteignable produit quelque chose :
 

@@ -632,6 +632,37 @@ la surface testable est en solo contre des mannequins sans rig ; bloquant en 1.4
 où lire la garde adverse *est* la mécanique. C'est le premier point de la 1.4,
 détaillé dans PHASE1.md §5 — déclaré plutôt que découvert.
 
+### Amendement — le rig, et le coût d'une dégradation qui ressemble à une panne
+
+La première recette de la tranche 1.3 a échoué sur ce point précis : **aucune
+pose ne s'affichait**, ni garde ni coups, alors que toute la logique serveur
+fonctionnait — dégâts réduits, jauge qui descend, `Blocking` sur le mannequin.
+
+Cause : les poses sont écrites en noms de jointures **R15**, qui font référence.
+Un rig **R6** nomme les siennes autrement — avec des espaces — et n'a ni taille,
+ni coudes, ni poignets, ni genoux. Sur une place réglée en R6, les poses
+d'attaque ne résolvaient donc **aucune** jointure, et la garde une seule : un
+tilt de tête de 10°, invisible.
+
+Le code faisait exactement ce que son commentaire annonçait — « chaque jointure
+absente est ignorée, aucune erreur ». C'était le défaut : **j'avais documenté un
+échec silencieux et je l'avais pris pour de la robustesse.** Le projet interdit
+les chemins qui échouent sans rien dire ; une dégradation acceptable en est un
+dès lors qu'elle est indiscernable d'une panne totale.
+
+**Correctif, en deux temps.** `Animation/Rig` traduit les noms canoniques vers le
+rig réel, si bien que R6 joue désormais ce qu'il peut jouer — épaules, hanches,
+nuque — au lieu de rien. Et surtout, il **compte** : `n/N jointures posables`,
+journalisé au bind, affiché en permanence dans F2. Zéro résolu déclenche un
+`Log.error` qui nomme les jointures réellement présentes sur le rig.
+
+La règle générale que ça pose, et qui vaut au-delà de l'animation : **une
+dégradation acceptable et une panne ne doivent jamais produire le même signal.**
+Trois causes donnaient ici le même personnage immobile — rig sans jointures, pose
+non déclenchée, boucle de rendu non démarrée — et ne se corrigent pas au même
+endroit. Le panneau les sépare maintenant en une ligne, ce qui aurait transformé
+une recette perdue en une lecture de dix secondes.
+
 ---
 
 ## Décisions différées (à trancher au moment dit, notées ici pour ne pas être oubliées)

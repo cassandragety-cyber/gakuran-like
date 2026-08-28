@@ -214,6 +214,17 @@ function AnimationController.counts(): (number, number)
 end
 
 --[[
+	État du moteur de pose, relayé tel quel.
+
+	Le panneau lit ce module et pas `Procedural`, qui vit dans un sous-dossier :
+	`AnimationController` reste le point d'entrée unique de l'animation, y compris
+	pour le diagnostic.
+]]
+function AnimationController.rigStatus(): (string, number, number, boolean)
+	return Procedural.diagnose()
+end
+
+--[[
 	Attend que le rig soit monté, puis lie.
 
 	Le personnage est parenté à `workspace` AVANT ses descendants : lier

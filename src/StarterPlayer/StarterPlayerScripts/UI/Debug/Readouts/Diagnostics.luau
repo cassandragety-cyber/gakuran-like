@@ -110,6 +110,30 @@ local rows: { Format.Readout } = {
 	},
 	{
 		section = "Performance",
+		label = "Rig posable",
+		read = function(_now: number): (string, Color3?)
+			local rig, resolved, required, bound = AnimationController.rigStatus()
+			if not bound then
+				return "moteur de pose non démarré", Theme.Colors.Accent
+			end
+			--[[
+				Trois pannes se ressemblent à l'écran — personnage immobile — et ne
+				se corrigent pas au même endroit : rig non lié, pose non déclenchée,
+				pose déclenchée sans jointure où l'écrire. Cette ligne les sépare.
+
+				Zéro jointure posable est la panne qui a coûté la recette de la
+				1.3 : une place réglée en R6 alors que les poses sont écrites en
+				noms R15.
+			]]
+			local color = if resolved == 0
+				then Theme.Colors.Accent
+				elseif resolved < required then Theme.Colors.Warning
+				else Theme.Colors.Good
+			return string.format("%s · %d/%d jointures", rig, resolved, required), color
+		end,
+	},
+	{
+		section = "Performance",
 		label = "Animations",
 		read = function(_now: number): (string, Color3?)
 			local loaded, procedural = AnimationController.counts()

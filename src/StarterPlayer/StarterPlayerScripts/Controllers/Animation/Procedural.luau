@@ -27,6 +27,7 @@ local RunService = game:GetService("RunService")
 local Clock = require(ReplicatedStorage.Shared.Clock)
 local Log = require(ReplicatedStorage.Shared.Log)
 local PosesConfig = require(ReplicatedStorage.Config.Poses)
+local Rig = require(script.Parent.Rig)
 
 local SCOPE = "Procedural"
 
@@ -50,27 +51,30 @@ type Playing = {
 
 local Procedural = {}
 
+-- Indexées par nom CANONIQUE (R15), quel que soit le rig réel : `update` n'a
+-- ainsi jamais à savoir sur quoi il écrit. `Rig` fait la traduction.
 local joints: { [string]: Motor6D } = {}
 local playing: { [string]: Playing } = {}
 local bound = false
 
 --[[
-	Recense les Motor6D du personnage, par nom de jointure.
-
-	Un rig sans la jointure attendue (R6, ou un personnage incomplet au moment du
-	spawn) produit simplement une pose partielle : chaque jointure absente est
-	ignorée, aucune erreur. Un retour visuel dégradé vaut mieux qu'un contrôleur
-	qui lève une exception au milieu d'un combat.
+	Recense les jointures posables du personnage. La traduction des noms et le
+	diagnostic vivent dans `Rig` : ici on ne fait que retenir le résultat.
 ]]
 function Procedural.bindCharacter(character: Model)
-	table.clear(joints)
 	table.clear(playing)
+	joints = Rig.bind(character)
+end
 
-	for _, descendant in character:GetDescendants() do
-		if descendant:IsA("Motor6D") then
-			joints[descendant.Name] = descendant
-		end
-	end
+--[[
+	État du moteur de pose, pour le panneau F2. Le drapeau `bound` complète le
+	diagnostic de `Rig` : il distingue « le rig n'a pas de jointure » de « la boucle
+	de rendu n'a jamais démarré », deux pannes qui donnent le même personnage
+	immobile.
+]]
+function Procedural.diagnose(): (string, number, number, boolean)
+	local rigLabel, resolved, required = Rig.diagnose()
+	return rigLabel, resolved, required, bound
 end
 
 function Procedural.hasPose(key: string): boolean
