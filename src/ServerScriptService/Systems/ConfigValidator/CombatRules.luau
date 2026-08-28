@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Animations = require(ReplicatedStorage.Config.Animations)
 local Balance = require(ReplicatedStorage.Config.Balance)
 local Check = require(script.Parent.Check)
+local Poses = require(ReplicatedStorage.Config.Poses)
 
 local check = Check.check
 local isPositive = Check.isPositive
@@ -192,6 +193,59 @@ function M.validateAnimations(problems: { string })
 		byKey.BlockStart ~= nil and byKey.BlockStart.targetDuration <= Balance.Parry.Window,
 		"Animations.BlockStart doit se lire en moins que Balance.Parry.Window, sinon le parry est invisible"
 	)
+end
+
+--[[
+	Chaque clé d'animation doit être SERVIE par quelque chose.
+
+	Trois cas admis, et un seul à la fois : un asset réel (`id > 0`), une pose
+	procédurale de repli, ou une déclaration explicite dans `Poses.Pending` avec
+	la tranche qui la fournira. Un état qu'on peut atteindre sans rien à jouer
+	produit un personnage figé au milieu d'un combat — un défaut qui ne se voit
+	qu'en jeu, tard, et qu'on ne relie pas à sa cause.
+
+	C'est le pendant d'ADR-009 côté validation : la promesse « remplacer un 0 par
+	un asset id suffit » n'a de valeur que si le 0 fait déjà quelque chose.
+]]
+function M.validatePoseCoverage(problems: { string })
+	local byKey = (Animations :: any) :: { [string]: Animations.AnimationDef }
+
+	for key, definition in byKey do
+		if definition.id > 0 or Poses.Poses[key] ~= nil then
+			continue
+		end
+		check(
+			problems,
+			Poses.Pending[key] ~= nil,
+			`Animations.{key} n'a ni asset (id = 0), ni pose procédurale, ni entrée dans Poses.Pending`
+		)
+	end
+
+	for key in Poses.Poses do
+		check(
+			problems,
+			byKey[key] ~= nil,
+			`Poses.{key} ne correspond à aucune clé de Config/Animations`
+		)
+	end
+
+	for key in Poses.Pending do
+		check(
+			problems,
+			byKey[key] ~= nil,
+			`Poses.Pending.{key} ne correspond à aucune clé de Config/Animations`
+		)
+	end
+
+	-- Une pose ne peut pas passer plus de temps à monter et redescendre qu'elle
+	-- n'en a : au-delà, elle n'atteint jamais la silhouette qu'elle décrit.
+	for key, pose in Poses.Poses do
+		check(
+			problems,
+			pose.attack > 0 and pose.release >= 0 and pose.attack + pose.release <= 1,
+			`Poses.{key} : attack + release doit tenir dans ]0, 1] (attack = {pose.attack}, release = {pose.release})`
+		)
+	end
 end
 
 return M

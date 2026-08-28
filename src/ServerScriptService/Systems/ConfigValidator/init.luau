@@ -30,6 +30,7 @@ function ConfigValidator.validate(): Result.Verdict
 	ContentRules.validateRarity(problems)
 	CombatRules.validateBalance(problems)
 	CombatRules.validateAnimations(problems)
+	CombatRules.validatePoseCoverage(problems)
 	ContentRules.validateRateLimits(problems)
 	ContentRules.validateDataStores(problems)
 	ContentRules.validateTunables(problems)

@@ -9,6 +9,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatTypes = require(ReplicatedStorage.Shared.Combat.Types)
+local GuardModel = require(ReplicatedStorage.Shared.Combat.GuardModel)
 local RingBuffer = require(ReplicatedStorage.Shared.RingBuffer)
 local StaminaModel = require(ReplicatedStorage.Shared.Combat.StaminaModel)
 
@@ -39,9 +40,17 @@ export type Combatant = {
 	health: number,
 	maxHealth: number,
 	stamina: StaminaModel.StaminaState,
-	guard: number,
+	guard: GuardModel.GuardState,
 	dashReadyAt: number,
 	parryReadyAt: number,
+	--[[
+		Ouverture de garde revendiquée par le client, sur l'horloge commune. Même
+		rôle que `lastSwing` pour l'attaque : c'est la trace sur laquelle le
+		serveur arbitrera la parade en tranche 1.4, et elle doit être datée sur
+		l'horloge du client, faute de quoi la fenêtre de parade se décale de la
+		latence montante et devient inatteignable (ADR-017).
+	]]
+	guardOpenedAt: number,
 	sprinting: boolean,
 	lastSwing: Swing?,
 	-- Cibles déjà touchées par le coup en cours. Un coup ne touche jamais deux

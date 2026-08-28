@@ -32,6 +32,7 @@ type DummyView = {
 	health: TextLabel,
 	verdict: TextLabel,
 	resetAt: number?,
+	guarding: boolean,
 }
 
 local trove = Trove.new()
@@ -113,12 +114,52 @@ local function spawnDummy(spec: Training.DummySpec, parent: Folder): DummyView
 	local health, verdict = buildBillboard(root)
 	local combatant = StateService.register(model, root, nil, nil)
 
-	return { combatant = combatant, health = health, verdict = verdict, resetAt = nil }
+	return {
+		combatant = combatant,
+		health = health,
+		verdict = verdict,
+		resetAt = nil,
+		guarding = spec.guarding == true,
+	}
+end
+
+--[[
+	Maintient la garde d'un mannequin qui doit la tenir.
+
+	On ne remonte la garde que depuis `Idle`, jamais en forçant l'état : le
+	mannequin subit donc réellement le guard break, reste étourdi ses 1,6 s, puis
+	se remet en garde quand la machine à états le lui permet. C'est exactement la
+	boucle qu'on veut pouvoir observer en frappant — jauge qui descend, rupture,
+	ouverture, retour.
+]]
+local function holdGuard(view: DummyView)
+	local combatant = view.combatant
+	if combatant.state.name ~= "Idle" or combatant.health <= 0 then
+		return
+	end
+	StateService.requestTransition(combatant, "Blocking", workspace:GetServerTimeNow())
 end
 
 local function refresh(view: DummyView, now: number)
 	local combatant = view.combatant
-	view.health.Text = string.format("%d / %d", math.floor(combatant.health), combatant.maxHealth)
+
+	if view.guarding then
+		holdGuard(view)
+	end
+
+	-- La jauge de garde n'est affichée que sur les cibles qui gardent : sur les
+	-- autres elle resterait au maximum et n'apprendrait rien.
+	if view.guarding then
+		view.health.Text = string.format(
+			"%d / %d   ▌%d",
+			math.floor(combatant.health),
+			combatant.maxHealth,
+			math.floor(combatant.guard.current)
+		)
+	else
+		view.health.Text =
+			string.format("%d / %d", math.floor(combatant.health), combatant.maxHealth)
+	end
 	view.health.TextColor3 = if combatant.health <= 0
 		then Color3.fromRGB(232, 84, 84)
 		else Color3.fromRGB(236, 236, 240)

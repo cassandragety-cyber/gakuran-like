@@ -9,10 +9,15 @@ Documentation : [PLAN](docs/PLAN.md) · [DÉCISIONS](docs/DECISIONS.md) ·
 [COMBAT](docs/COMBAT.md) · [ANIMATIONS](docs/ANIMATIONS.md) ·
 [MODÈLE DE MENACE](docs/THREAT_MODEL.md) · [TESTS](docs/TESTING.md)
 
-**État : tranche 1.2 terminée** — chaîne d'attaque de quatre coups, hitbox
-client validée par rembobinage serveur, mannequins d'entraînement, prédiction
-locale. La garde arrive en 1.3, la parade en 1.4. Découpage complet dans
+**État : tranche 1.3 terminée** — chaîne d'attaque de quatre coups, hitbox
+client validée par rembobinage serveur, garde avec jauge et guard break, et un
+repli d'animation procédural qui rend le combat lisible sans le moindre asset
+(`Config/Poses`). La parade arrive en 1.4. Découpage complet dans
 [PHASE1.md](docs/PHASE1.md).
+
+Dette connue et datée : `Motor6D.Transform` n'étant pas répliqué, **la garde
+d'un adversaire est encore invisible pour lui**. Sans effet sur la 1.3, testable
+en solo ; bloquant pour la 1.4, dont c'est le premier point (PHASE1.md §5).
 
 ---
 

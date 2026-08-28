@@ -28,6 +28,24 @@ function Combat.parseAttackIntent(value: unknown): Types.AttackIntent?
 end
 
 --[[
+	Ouverture / fermeture de garde. Deux champs, aucun verdict : la surface la
+	plus étroite possible pour la mécanique la plus rentable à tricher (ADR-002).
+]]
+function Combat.parseBlockIntent(value: unknown): Types.BlockIntent?
+	if type(value) ~= "table" then
+		return nil
+	end
+	local raw = value :: { [string]: unknown }
+
+	local open = Parsers.parseBoolean(raw.open)
+	local clientTime = Parsers.parseFiniteNumber(raw.clientTime)
+	if open == nil or clientTime == nil then
+		return nil
+	end
+	return { open = open, clientTime = clientTime }
+end
+
+--[[
 	Le nombre de cibles est plafonné ici, à l'entrée. Sans ce plafond, un client
 	pourrait déclarer avoir touché tout le serveur d'un seul coup et forcer autant
 	de rembobinages et de raycasts — un déni de service payé par le serveur avant
@@ -90,6 +108,7 @@ function Combat.parseHitResult(value: unknown): Types.HitResult?
 	local targetHealth = Parsers.parseFiniteNumber(raw.targetHealth)
 	local hitstop = Parsers.parseFiniteNumber(raw.hitstop)
 	local target = Parsers.parseModel(raw.target)
+	local guardBroken = Parsers.parseBoolean(raw.guardBroken)
 
 	if
 		seq == nil
@@ -99,6 +118,7 @@ function Combat.parseHitResult(value: unknown): Types.HitResult?
 		or targetHealth == nil
 		or hitstop == nil
 		or target == nil
+		or guardBroken == nil
 	then
 		return nil
 	end
@@ -112,6 +132,7 @@ function Combat.parseHitResult(value: unknown): Types.HitResult?
 		target = target :: Instance,
 		targetHealth = targetHealth,
 		hitstop = hitstop,
+		guardBroken = guardBroken,
 	}
 end
 

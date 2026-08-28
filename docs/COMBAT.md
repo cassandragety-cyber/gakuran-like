@@ -198,6 +198,41 @@ de 12 points par seconde après 1,5 s sans coup reçu.
 La garde ralentit le déplacement à 55 % : elle protège, elle ne permet pas de
 fuir en protégeant.
 
+### Ce qui se consomme, et pourquoi ce n'est pas ce qui s'inflige
+
+La jauge se consomme en dégâts **bruts**, la vie en dégâts **réduits**. Un coup
+de 14 retire 4,9 PV et 14 points de garde. C'est délibéré : consommer la jauge en
+dégâts réduits rendrait la garde d'autant plus solide qu'elle protège bien, et
+supprimerait toute tension. Ainsi, le finisher de chaîne reste menaçant même
+face à une garde levée — il coûte presque le double d'un coup d'ouverture.
+
+Avec les valeurs actuelles, une chaîne complète retire 39 des 60 points : il faut
+**deux chaînes** pour casser une garde qui ne se régénère pas entre les deux.
+
+### Le coup qui casse
+
+Le coup qui vide la jauge inflige des dégâts **réduits**, pas pleins. La punition
+du guard break est l'étourdissement de 1,6 s — largement de quoi placer une chaîne
+complète, donc environ 39 PV. Y ajouter les dégâts pleins ferait payer deux fois
+la même faute et rendrait la garde plus dangereuse que ne pas garder du tout, ce
+qui n'a aucun sens à apprendre pour un joueur.
+
+Le verdict reste `Blocked` : la rupture est un effet de bord porté par un champ
+`guardBroken`, pas un cinquième verdict. Le coup a bien été bloqué ; c'est la
+garde qui n'y survit pas.
+
+À la rupture, la jauge repart **pleine**. Rouvrir sur une jauge vide ferait
+re-casser au coup suivant, et le guard break deviendrait un verrou permanent au
+lieu d'une punition ponctuelle.
+
+### Sortie d'étourdissement
+
+Aucune transition ne part de `Stunned` (§1.3), donc le défenseur ne peut pas
+remonter sa garde avant la fin. À l'expiration, il revient à `Idle` **garde
+baissée**, même si la touche est restée enfoncée : il faut relâcher et rappuyer.
+C'est la convention du genre, et elle évite qu'un joueur qui maintient la touche
+récupère automatiquement une fenêtre de parade à la sortie du stun.
+
 ---
 
 ## 4. Parade

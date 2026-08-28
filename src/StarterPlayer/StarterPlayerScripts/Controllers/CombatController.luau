@@ -51,7 +51,11 @@ type PendingSwing = {
 	reported: boolean,
 }
 
-local nextSequence = 0
+-- Démarre à 1 : le 0 est réservé aux refus NON SÉQUENCÉS, ceux des demandes qui
+-- n'ont pas de numéro — la garde en particulier, dont le payload ne porte qu'un
+-- booléen et un horodatage. Sans cette réserve, le tout premier coup de la
+-- partie et un refus de garde se ressembleraient.
+local nextSequence = 1
 local pending: PendingSwing? = nil
 local lastVerdict: string? = nil
 local lastRefusal: string? = nil
@@ -195,6 +199,14 @@ local function onHitResult(payload: Types.HitResult)
 end
 
 local function onRefusal(payload: Types.Refusal)
+	-- Les refus non séquencés appartiennent à une autre demande que l'attaque —
+	-- la garde aujourd'hui. `GuardController` les affiche dans sa propre section ;
+	-- les reprendre ici ferait apparaître un `ParryCooldown` sous « Dernier refus »
+	-- du combat, au moment où l'on cherche pourquoi un coup ne passe pas.
+	if payload.seq == Definitions.UNSEQUENCED then
+		return
+	end
+
 	lastRefusal = payload.code
 	lastEventAt = Clock.monotonic()
 	-- Un refus n'est pas une erreur : c'est la réponse attendue quand on frappe à

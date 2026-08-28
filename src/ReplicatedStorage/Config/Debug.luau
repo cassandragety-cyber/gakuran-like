@@ -106,6 +106,13 @@ local Debug = {
 		["Block.DamageMultiplier"] = tunable(0.00, 1.00, 0.05, "Dégâts encaissés en garde"),
 		["Block.GuardHealth"] = tunable(10, 200, 5, "Jauge de garde"),
 		["Block.GuardBreakStun"] = tunable(0.40, 4.00, 0.10, "Stun de garde brisée"),
+		-- Le rythme de la garde se règle en frappant, pas en lisant : combien de
+		-- coups elle encaisse, et à quelle vitesse elle revient entre deux
+		-- échanges. Ces deux valeurs décident si la garde est une position tenable
+		-- ou un répit ponctuel, et ça ne se juge qu'à la main.
+		["Block.GuardRegenPerSecond"] = tunable(0, 60, 1, "Régén. de la garde"),
+		["Block.GuardRegenDelay"] = tunable(0.00, 5.00, 0.10, "Délai avant régén. de garde"),
+		["Block.WalkSpeedMultiplier"] = tunable(0.10, 1.00, 0.05, "Vitesse en garde"),
 
 		["Dash.Distance"] = tunable(4, 40, 1, "Distance de dash"),
 		["Dash.InvulnerabilityDuration"] = tunable(0.00, 0.50, 0.01, "I-frames de dash"),

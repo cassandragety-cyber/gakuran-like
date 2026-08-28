@@ -18,6 +18,17 @@ export type DummySpec = {
 	name: string,
 	-- Décalage par rapport au centre de la plateforme.
 	offset: Vector3,
+	--[[
+		Le mannequin tient sa garde en permanence, et la relève dès qu'il la
+		perd. C'est la seule façon d'éprouver les branches `Blocked` et guard
+		break en solo : rien d'autre dans la scène ne frappe le joueur, donc sans
+		cette cible on ne pourrait vérifier que le côté attaquant de la garde.
+
+		Il passe par le MÊME chemin qu'un joueur — `requestTransition("Blocking")`
+		— cooldown de parade compris. Un mannequin dont l'état serait écrit à la
+		main ne prouverait rien sur les règles réelles.
+	]]
+	guarding: boolean?,
 }
 
 local Training = {
@@ -31,6 +42,11 @@ local Training = {
 		{ name = "Dummy_Face", offset = Vector3.new(0, 3, -10) } :: DummySpec,
 		{ name = "Dummy_Left", offset = Vector3.new(-8, 3, -14) } :: DummySpec,
 		{ name = "Dummy_Right", offset = Vector3.new(8, 3, -14) } :: DummySpec,
+		{
+			name = "Dummy_Guard",
+			offset = Vector3.new(16, 3, -10),
+			guarding = true,
+		} :: DummySpec,
 	},
 
 	--[[

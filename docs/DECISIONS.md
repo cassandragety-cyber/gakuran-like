@@ -580,6 +580,60 @@ générique.
 
 ---
 
+## ADR-018 — Un état atteignable a un visuel, et « pas encore » se déclare
+
+**Statut :** acceptée (tranche 1.3)
+
+**Contexte.** ADR-009 promet qu'on développe sans assets d'animation et qu'on les
+branche plus tard en remplaçant un `0` par un asset id. La promesse tenait sur le
+plan du code ; elle ne disait rien de ce qui se passe **pendant** — c'est-à-dire
+pendant toute la Phase 1. Le retour du joueur après la tranche 1.2 a été net :
+« sans animation, VFX ni SFX, il n'y a rien à ressentir ». Un combat sans retour
+visuel n'est pas seulement moins agréable, il n'est pas **testable** : on ne sait
+ni si on a paré, ni ce qu'on a encaissé.
+
+**Décision.** Un `id = 0` joue une **pose procédurale** de même durée, décrite en
+données dans `Config/Poses`. La durée vient de la même source que le frame data,
+donc l'impact visuel ne peut pas dériver de l'impact réel.
+
+Et surtout, la règle qui empêche ce dispositif de pourrir : **toute clé
+d'animation doit être servie par exactement un des trois cas** — asset réel, pose
+procédurale, ou déclaration explicite dans `Poses.Pending` avec ce qui la
+fournira. `ConfigValidator` le vérifie au boot ; un oubli fait échouer le
+démarrage au lieu de produire un personnage figé au milieu d'un combat.
+
+Le corollaire qui a le plus changé le contenu de la tranche : **un état
+atteignable a un visuel**. `Knocked` est atteignable depuis la 1.2 — le finisher
+envoie au sol — donc ses poses sont écrites maintenant, pas « en 1.6 avec le
+ragdoll ». Ce qui reste dans `Pending` n'y est que parce qu'aucun code ne sait
+encore l'atteindre : la parade (1.4), les dashes (1.5). La locomotion y figure
+définitivement, servie par le script `Animate` de Roblox — la doubler ferait
+lutter deux systèmes sur les mêmes jointures.
+
+**Deux détails techniques qui portent tout le module.**
+
+L'**ordre d'exécution** : l'`Animator` réécrit `Motor6D.Transform` à chaque frame
+pendant l'étape « Character ». Écrire avant elle ne produit rien de visible. On
+s'accroche donc à `RenderPriority.Character.Value + 1`, ce qui superpose les poses
+à la locomotion au lieu de lutter contre elle.
+
+Le **mélange en moyenne pondérée**, et non en accumulation. `BlockStart` et
+`BlockHold` visent les mêmes jointures avec la même cible ; les additionner
+produirait une double rotation — bras traversant la tête pendant le recouvrement
+des deux lectures. La moyenne rend le relais invisible, et permet à une réaction
+d'encaissement de se mélanger à la garde au lieu de l'écraser : le défenseur
+encaisse sans jamais paraître baisser les bras.
+
+**Ce que ça ne couvre pas, et c'est daté.** `Motor6D.Transform` n'est pas
+répliqué : chaque client pose lui-même les personnages qu'il affiche, et il lui
+faut donc leur état. `CombatStateSync` ne part aujourd'hui qu'au propriétaire,
+donc **la garde d'un adversaire est invisible pour lui**. Sans effet en 1.3, dont
+la surface testable est en solo contre des mannequins sans rig ; bloquant en 1.4,
+où lire la garde adverse *est* la mécanique. C'est le premier point de la 1.4,
+détaillé dans PHASE1.md §5 — déclaré plutôt que découvert.
+
+---
+
 ## Décisions différées (à trancher au moment dit, notées ici pour ne pas être oubliées)
 
 | Sujet | Phase | Pourquoi on attend |

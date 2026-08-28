@@ -86,6 +86,16 @@ trop fréquent*, jamais qu'il est *légitime*.
 | **Contre-mesure** | (a) `StateMachine.canRequest` refuse tant que l'armé du coup courant n'est pas terminé, et la cadence borne le débit ; (b) **l'index de chaîne n'est pas dans le payload** — il est dérivé de l'état serveur par `Frames.nextChainIndex` (ADR-012), et la chaîne **boucle** : après le finisher on repart à 1, on ne peut donc pas se maintenir sur le coup à knockdown ; (c) aucune ligne de la table de transitions ne part de `Stunned`, `Knocked` ou `Downed` ; (d) `clientTime` ancre la chronologie du coup mais **jamais sa légalité** — cooldowns, endurance et transitions restent jugés à l'heure serveur (ADR-017) — et il passe par `checkTimestamp`, la même borne `[-ClockTolerance, MaxRewind]` qu'un rapport de contact. |
 | **Risque résiduel** | Antidater le coup décale sa fenêtre active d'au plus `MaxRewind` **dans le passé** : le contact devra alors être revendiqué à un instant que `Rewind` sait encore atteindre, donc aucune portée gagnée, et le coup expire d'autant plus tôt. Le mensonge se paie plus qu'il ne rapporte. Un refus est renvoyé avec son code, ce qui donne au client de quoi expliquer plutôt que de paraître perdre des entrées. |
 
+### `Combat.BlockState` — client → serveur
+
+| | |
+|---|---|
+| **Payload** | `{ open: booléen, clientTime: nombre fini }` |
+| **Cadence** | 6 en rafale, 3/s soutenu |
+| **Ce que tenterait un exploiteur** | (a) **déclarer une parade** ; (b) antidater l'ouverture pour parer rétroactivement un coup déjà encaissé ; (c) maintenir une fenêtre de parade ouverte en permanence par martèlement ouvrir/fermer ; (d) remonter la garde pendant l'étourdissement d'un guard break. |
+| **Contre-mesure** | (a) **il n'existe aucun message de parade** — le payload ne porte que « j'ouvre » ou « je ferme », et le serveur seul compare l'instant d'impact à la fenêtre (ADR-002). C'est une contre-mesure structurelle : il n'y a pas de champ à falsifier ; (b) `checkTimestamp` borne `clientTime` à `[-ClockTolerance, MaxRewind]`, une ouverture hors fenêtre est refusée plutôt qu'ancrée ; (c) `Parry.Cooldown` (0,55 s) court depuis l'OUVERTURE et non le relâchement, et la cadence borne le débit ; (d) aucune ligne de la table de transitions ne part de `Stunned` — `canRequest` refuse, et le refus porte son code. |
+| **Risque résiduel** | Antidater l'ouverture déplace la fenêtre d'au plus `MaxRewind` dans le passé, ce qui la ferme d'autant plus tôt : le mensonge raccourcit la protection au lieu de l'allonger. Ce qui reste hors de portée : parer sans avoir ouvert, garder pendant un étourdissement, rouvrir plus vite que le cooldown. |
+
 ### `Combat.HitReport` — client → serveur
 
 **Le remote le plus exposé du jeu.** C'est ici qu'un exploiteur gagnerait le plus.
@@ -116,7 +126,7 @@ contre-mesure soit conçue avant le remote, et non ajoutée après.
 |---|---|---|---|
 | ~~`Combat.Attack`~~ *(livré, voir §2)* | 1 | Rafale d'attaques sans respecter cooldowns ni endurance ; réclamer directement le 4e coup pour un knockdown à la demande | Cadence 8/4-s ; l'index de chaîne est **dérivé** par `Frames.nextChainIndex` de l'état serveur et n'est pas dans le payload ; endurance et transition validées par `StateMachine.canRequest` |
 | ~~`Combat.HitReport`~~ *(livré, voir §2)* | 1 | Déclarer des cibles hors de portée, à travers un mur, dans le dos, ou tout le serveur d'un coup ; rejouer le même swing | `Rewind` borné à 0,25 s puis `HitValidator` : distance, `FacingDot`, ligne de vue, fraîcheur d'horodatage, phase active cohérente, `AlreadyHitThisSwing` ; liste plafonnée à `MaxTargetsPerSwing` |
-| `Combat.BlockState` `{open, clientTime}` | 1 | Antidater l'ouverture de garde pour parer rétroactivement ; maintenir une fenêtre de parade ouverte en permanence | Horodatage comparé à l'horloge serveur, tolérance 0,12 s ; fenêtre de 0,20 s calculée serveur ; cooldown de 0,55 s entre deux ouvertures ; le client ne déclare jamais « j'ai paré » (ADR-002) |
+| ~~`Combat.BlockState`~~ *(livré, voir §2)* | 1 | Antidater l'ouverture de garde pour parer rétroactivement ; maintenir une fenêtre de parade ouverte en permanence | Horodatage borné par `checkTimestamp` ; fenêtre de 0,20 s ancrée à l'ouverture revendiquée mais **cooldown sur horloge serveur** (ADR-017) ; 0,55 s entre deux ouvertures ; le client ne déclare jamais « j'ai paré » (ADR-002) |
 | `Combat.Dash` `{direction 1..4, clientTime}` | 1 | Dash sans coût, i-frames permanentes, ou déplacement arbitraire | Direction bornée à un entier de 1 à 4 — jamais un vecteur ; cooldown et endurance serveur ; l'invulnérabilité est une propriété d'état serveur, pas un message |
 | `Style.Reroll` | 2 | Rerouler sans payer, ou rejouer un tirage jusqu'au Mythic | Le tirage est effectué serveur, le débit précède le tirage, le résultat n'est communiqué qu'une fois écrit dans le profil |
 | `Economy.Transfer` | 4 | Duplication de monnaie, blanchiment entre comptes complices | Débit et crédit dans la même transaction serveur ; `Systems/TransferGuard` applique plafond glissant, cooldown et détection d'aller-retour |

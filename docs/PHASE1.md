@@ -126,7 +126,10 @@ Aucune autre organisation du code ne permet ça.
 | `InputController` | Clavier / gamepad / tactile → actions nommées (`Attack`, `Block`, `Dash`, `ToggleDebug`). Seul module qui connaît `UserInputService`. |
 | `CombatController` | Prédiction locale via `Shared/Combat`, détection de contact, envoi des demandes, réconciliation. |
 | `HitboxDetector` | `GetPartBoundsInBox` + `OverlapParams`, filtrage du personnage propre, mesure via `Profiler.record("hitbox", …)`. |
-| `AnimationController` | *(tranche 1.3)* Joue une entrée de `Config/Animations` ; si `id == 0`, joue le mouvement procédural de même durée. Reporté à 1.3 : la lisibilité visuelle devient déterminante avec la garde, dont la pose doit se lire en moins de 0,10 s. En 1.2, le volume de hitbox et les panneaux des mannequins suffisent à vérifier la mécanique. |
+| `AnimationController` ✅ | Joue une entrée de `Config/Animations` ; si `id == 0`, joue la pose procédurale de même durée (`Config/Poses`). Redresse la vitesse d'un asset réel pour qu'il tienne exactement sa `targetDuration`. |
+| `Animation/Procedural` ✅ | Écrit `Motor6D.Transform` juste après l'étape « Character » du rendu. Mélange **en moyenne pondérée** : deux poses sur les mêmes jointures se relaient au lieu de doubler la rotation. |
+| `CombatFeedbackController` ✅ | Traduit l'état reflété en animation. Piloté par l'état **autoritatif**, jamais par les entrées : un coup refusé ne produit aucune animation. |
+| `GuardController` ✅ | Garde : prédiction locale, `Combat.BlockState`, réconciliation sur perte de garde. N'a aucun chemin permettant de déclarer une parade (ADR-002). |
 | `HitboxVisualizer` | Rend le volume réellement interrogé, sur l'interrupteur « Afficher les hitbox ». Reçoit la CFrame du détecteur au lieu de la recalculer, pour ne pas déboguer deux calculs. |
 | `FeedbackController` | Hitstop, éclats, sons, et **le retour en deux temps de la parade** (COMBAT.md §5). |
 | `DebugPanelController` | Le panneau F2 (§4). |
@@ -262,14 +265,42 @@ Chaque tranche est jouable et testable à sa livraison, avec sa procédure ajout
 |---|---|---|
 | **1.1** ✅ | `CharacterService`, `StateService`, `MovementService`, `StateMachine`, `Frames`, `StaminaModel`, `TuningService`, sprint, panneau F2 complet, latence simulée | Livré. Voir `docs/TESTING.md` §1.1. **Le panneau arrive en premier parce que tout le reste se règle avec.** |
 | **1.2** ✅ | `Combat.Attack` + `HitReport`, `HitboxDetector`, `HitboxVisualizer`, `Rewind`, `HitValidator`, `CombatResolver` (branches `Hit`/`Ignored`), `TrainingService`, prédiction locale et écart de prédiction | Livré. Voir `docs/TESTING.md` §1.2. |
-| **1.3** | Garde, jauge, guard break, `CombatResolver` (branches `Blocked` / `Hit`) | 35 % des dégâts en garde ; la jauge se vide, le guard break impose 1,6 s de `Stunned` ; la garde ne s'ouvre pas depuis la récupération d'une attaque. |
-| **1.4** | **Parade** : branche `Parried`, arbitrage horodaté, retour en deux temps, les quatre cas de réconciliation, les interrupteurs de dev | Les quatre cas de COMBAT.md §5 se déclenchent à volonté et **aucun** ne produit d'animation contredite en cours de lecture. Tests exhaustifs de `CombatResolver.resolve` sur la frontière de fenêtre. **Tranche la plus longue de la phase.** |
+| **1.3** ✅ | Garde, jauge, guard break, `CombatResolver` (branche `Blocked`), `AnimationController` + repli procédural | Livré. Voir `docs/TESTING.md` §1.3. |
+| **1.4** | **Réplication d'état aux joueurs proches** (voir ci-dessous), puis **parade** : branche `Parried`, arbitrage horodaté, retour en deux temps, les quatre cas de réconciliation, les interrupteurs de dev | Les quatre cas de COMBAT.md §5 se déclenchent à volonté et **aucun** ne produit d'animation contredite en cours de lecture. Tests exhaustifs de `CombatResolver.resolve` sur la frontière de fenêtre. **Tranche la plus longue de la phase.** |
 | **1.5** | Dash, i-frames, annulation de récupération, coûts d'endurance | Le dash annule une récupération `cancelable` mais jamais un armé ; les i-frames couvrent 0,12 s à partir du départ ; à moins de 10 d'endurance, refus. |
 | **1.6** | Knockdown, ragdoll, `GettingUp`, KO, respawn | Le 4e coup envoie au sol ; l'invulnérabilité de relevage empêche l'enchaînement infini ; le KO déclenche un respawn propre. |
 | **1.7** | Recette réseau et performance | Critère du brief : deux clients à 150 ms de latence simulée, 100 échanges, 100 % des parades dans la fenêtre reconnues, zéro hit fantôme. Coût de hitbox p95 < 0,15 ms. |
 
 Rien de la Phase 2 ne commence avant que 1.4 et 1.7 ne soient tous les deux
 verts.
+
+### Dette connue et datée : la garde adverse est invisible
+
+`Motor6D.Transform`, sur lequel repose le repli procédural, **n'est pas
+répliqué**. Chaque client doit donc poser lui-même tous les personnages qu'il
+affiche, et pour cela connaître leur état de combat. Or `CombatStateSync` ne part
+aujourd'hui qu'au propriétaire.
+
+Conséquence exacte : en tranche 1.3, **on voit sa propre garde, pas celle de son
+adversaire**.
+
+Ça ne bloque pas la 1.3, dont toute la surface testable est en solo contre des
+mannequins — qui sont des `Model` sans rig et ne pourraient de toute façon rien
+poser. Ça bloque la 1.4, où deux joueurs se font face et où lire la garde adverse
+**est** la mécanique : c'est sur la pose de garde que le défenseur cale sa parade
+et que l'attaquant décide de temporiser.
+
+C'est donc le **premier point de la 1.4**, avant la branche `Parried` :
+
+1. remote `Combat.PeerState` (serveur → client), portant `userId` et `state` et
+   **rien d'autre** — ni jauge, ni endurance, ni cooldowns : ce qu'on n'envoie
+   pas ne peut pas être lu (THREAT_MODEL §2) ;
+2. émission sur changement discret uniquement, aux joueurs à portée ;
+3. côté client, un jeu de jointures **par personnage** plutôt que le jeu unique
+   d'aujourd'hui, et une boucle de rendu qui les parcourt tous.
+
+Le point 3 est le vrai travail : `Animation/Procedural` tient aujourd'hui un seul
+rig, celui du joueur local.
 
 ---
 

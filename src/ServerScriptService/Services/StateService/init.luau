@@ -20,6 +20,7 @@ local RunService = game:GetService("RunService")
 local CharacterService = require(script.Parent.CharacterService)
 local Clock = require(ReplicatedStorage.Shared.Clock)
 local Definitions = require(ReplicatedStorage.Net.Definitions)
+local GuardModel = require(ReplicatedStorage.Shared.Combat.GuardModel)
 local Net = require(ReplicatedStorage.Net)
 local RingBuffer = require(ReplicatedStorage.Shared.RingBuffer)
 local SessionService = require(script.Parent.SessionService)
@@ -95,6 +96,33 @@ function StateService.applyDamage(combatant: Combatant, amount: number): number
 	return combatant.health
 end
 
+--[[
+	Écrit la jauge de garde après absorption et date le coup encaissé.
+
+	Le montant vient de `CombatResolver`, qui l'a calculé : le service applique,
+	il ne recalcule pas. Deux endroits qui soustraient de la garde seraient deux
+	endroits où l'équilibrage peut diverger.
+]]
+function StateService.consumeGuard(combatant: Combatant, remaining: number)
+	combatant.guard.current = remaining
+	combatant.guard.lastHitAt = Clock.now()
+	StateService.touch(combatant)
+end
+
+--[[
+	Guard break : étourdissement imposé, jauge restaurée.
+
+	L'ordre compte. On restaure AVANT d'imposer l'état : si l'imposition échouait
+	par priorité (le défenseur est déjà au sol, `Knocked` = 4 > `Stunned` = 3), on
+	veut quand même que sa garde soit repartie de zéro plutôt que de le laisser
+	avec une jauge vide qui recasserait au relevage.
+]]
+function StateService.breakGuard(combatant: Combatant, stunDuration: number)
+	combatant.guard.current = GuardModel.restore(TuningService.balance())
+	combatant.guard.lastHitAt = Clock.now()
+	StateService.impose(combatant, "Stunned", stunDuration)
+end
+
 function StateService.recordVerdict(combatant: Combatant, verdict: string, damage: number)
 	combatant.lastVerdict = verdict
 	combatant.lastDamage = damage
@@ -111,9 +139,11 @@ end
 function StateService.reset(combatant: Combatant)
 	local balance = TuningService.balance()
 	combatant.health = combatant.maxHealth
-	combatant.guard = balance.Block.GuardHealth
+	combatant.guard.current = GuardModel.restore(balance)
+	combatant.guard.lastHitAt = 0
 	combatant.stamina.current = balance.Stamina.Max
 	combatant.state = StateMachine.idle(Clock.now())
+	combatant.guardOpenedAt = 0
 	combatant.lastSwing = nil
 	combatant.swingHits = {}
 	combatant.lastVerdict = nil
@@ -156,9 +186,10 @@ function StateService.register(
 		health = balance.Character.MaxHealth,
 		maxHealth = balance.Character.MaxHealth,
 		stamina = { current = balance.Stamina.Max, lastCombatAt = 0 },
-		guard = balance.Block.GuardHealth,
+		guard = GuardModel.new(balance),
 		dashReadyAt = 0,
 		parryReadyAt = 0,
+		guardOpenedAt = 0,
 		sprinting = false,
 		lastSwing = nil,
 		swingHits = {},
@@ -199,14 +230,25 @@ local function replicate(combatant: Combatant, now: number)
 		return
 	end
 
-	-- Tranche 1.2 : le propriétaire seulement. Les joueurs proches en auront
-	-- besoin dès qu'il y aura un retour visuel à jouer sur autrui (tranche 1.3).
+	--[[
+		Le propriétaire seulement, et il faut savoir pourquoi ce n'est pas encore
+		suffisant. `Motor6D.Transform`, sur lequel s'appuie le repli procédural,
+		n'est PAS répliqué : chaque client doit poser lui-même tous les
+		personnages qu'il affiche, donc connaître leur état. La garde d'un
+		adversaire est aujourd'hui invisible pour son adversaire.
+
+		Ça ne bloque pas la tranche 1.3, dont toute la surface testable est en
+		solo contre des mannequins — qui sont des Models sans rig et ne pourraient
+		de toute façon rien poser. Ça bloque la 1.4, où deux joueurs se font face
+		et où lire la garde adverse EST la mécanique. La réplication aux joueurs
+		proches est donc le premier point de la 1.4, pas un oubli (PHASE1.md §5).
+	]]
 	Net.Server.fire(Definitions.CombatStateSync, player, {
 		userId = player.UserId,
 		state = combatant.state,
 		health = combatant.health,
 		stamina = combatant.stamina.current,
-		guard = combatant.guard,
+		guard = combatant.guard.current,
 		dashReadyAt = combatant.dashReadyAt,
 		parryReadyAt = combatant.parryReadyAt,
 	})

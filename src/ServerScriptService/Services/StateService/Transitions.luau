@@ -53,8 +53,24 @@ local function applyEntryCost(
 	elseif target == "Blocking" then
 		-- Le cooldown court depuis l'OUVERTURE, pas le relâchement : sinon le
 		-- maintien-relâche en boucle rouvrirait une fenêtre de parade à chaque
-		-- pression.
+		-- pression. Horloge SERVEUR : un cooldown est une ressource que le
+		-- serveur possède, jamais un instant que le client fournit (ADR-017).
 		combatant.parryReadyAt = now + balance.Parry.Cooldown
+
+		--[[
+			La fenêtre de parade, elle, est ancrée à l'ouverture REVENDIQUÉE. C'est
+			ce que COMBAT.md §4 définit — `[ouverture, ouverture + Parry.Window]` —
+			et c'est la seule datation qui tienne : ancrer à la réception décalerait
+			la fenêtre de la latence montante, et un joueur à 150 ms ne pourrait
+			jamais parer. Exactement le bug qu'ADR-017 a corrigé sur l'attaque ; on
+			ne le réintroduit pas du côté défense.
+
+			`startedAt` est déjà borné par l'appelant via `checkTimestamp`, donc la
+			fenêtre ne peut pas être ouverte dans un passé arbitraire.
+		]]
+		combatant.guardOpenedAt = startedAt
+		combatant.state.enteredAt = startedAt
+		combatant.state.windowUntil = startedAt + balance.Parry.Window
 	elseif target == "Attacking" then
 		combatant.lastSwing = { index = combatant.state.chainIndex, startedAt = startedAt }
 		-- Nouveau coup, nouvelle ardoise de cibles.

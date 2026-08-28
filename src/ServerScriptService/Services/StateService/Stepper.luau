@@ -12,16 +12,18 @@
 	  1. expiration des échéances — un état échu ne doit pas régénérer une frame
 	     de plus sous ses anciennes règles ;
 	  2. endurance ;
-	  3. échantillonnage de position — après le déplacement de la frame, sinon
+	  3. jauge de garde ;
+	  4. échantillonnage de position — après le déplacement de la frame, sinon
 	     l'historique aurait systématiquement une frame de retard sur la réalité
 	     que le client a vue ;
-	  4. réplication.
+	  5. réplication.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BalanceConfig = require(ReplicatedStorage.Config.Balance)
 local Clock = require(ReplicatedStorage.Shared.Clock)
+local GuardModel = require(ReplicatedStorage.Shared.Combat.GuardModel)
 local RingBuffer = require(ReplicatedStorage.Shared.RingBuffer)
 local StaminaModel = require(ReplicatedStorage.Shared.Combat.StaminaModel)
 local StateMachine = require(ReplicatedStorage.Shared.Combat.StateMachine)
@@ -43,6 +45,7 @@ type Steppable = {
 	root: BasePart,
 	state: any,
 	stamina: StaminaModel.StaminaState,
+	guard: GuardModel.GuardState,
 	sprinting: boolean,
 	history: RingBuffer.RingBuffer<any>,
 	lastSampleAt: number,
@@ -87,6 +90,10 @@ function Stepper.step<T>(
 			combatant.sprinting = false
 			combatant.dirty = true
 		end
+
+		-- La jauge de garde se régénère en permanence, garde levée ou non : c'est
+		-- le temps sans encaisser qui la restaure. Voir GuardModel.step.
+		combatant.guard.current = GuardModel.step(combatant.guard, now, deltaTime, balance)
 
 		if now - combatant.lastSampleAt >= sampleInterval then
 			sample(combatant, now)

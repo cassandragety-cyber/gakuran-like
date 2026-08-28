@@ -26,6 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Claim = require(script.Claim)
 local Clock = require(ReplicatedStorage.Shared.Clock)
 local CombatResolver = require(script.Parent.Parent.Systems.CombatResolver)
+local CombatTypes = require(ReplicatedStorage.Shared.Combat.Types)
 local Definitions = require(ReplicatedStorage.Net.Definitions)
 local HitValidator = require(script.Parent.Parent.Systems.HitValidator)
 local Log = require(ReplicatedStorage.Shared.Log)
@@ -63,6 +64,24 @@ local function applyOutcome(
 		-- plus longue que les autres.
 		StateService.markImpact(attacker, clientTime + balance.Combat.ComboWindow)
 
+		if outcome.verdict == "Blocked" then
+			StateService.consumeGuard(target, outcome.guardRemaining)
+
+			--[[
+				La garde a cédé. L'étourdissement est imposé, donc arbitré par
+				priorité : `Stunned` (3) l'emporte sur `Blocking` (1), et la table de
+				transitions n'offre aucune sortie depuis `Stunned`. Le défenseur ne
+				peut donc pas remonter sa garde avant la fin — c'est ce qui fait du
+				guard break une vraie ouverture et pas une simple gêne.
+
+				La jauge repart pleine : rouvrir sur une jauge vide re-casserait au
+				coup suivant, transformant une punition ponctuelle en verrou.
+			]]
+			if outcome.guardBroken then
+				StateService.breakGuard(target, balance.Block.GuardBreakStun)
+			end
+		end
+
 		if outcome.knockdown then
 			StateService.impose(target, "Knocked", balance.Knockdown.RagdollDuration)
 		end
@@ -77,6 +96,7 @@ local function applyOutcome(
 		target = target.model,
 		targetHealth = target.health,
 		hitstop = outcome.hitstop,
+		guardBroken = outcome.guardBroken,
 	}
 
 	local attackingPlayer = attacker.player
@@ -126,6 +146,55 @@ local function onAttack(player: Player, payload: { seq: number, clientTime: numb
 		return
 	end
 	StateService.tagCombat(combatant)
+end
+
+--[[
+	Ouverture ou fermeture de la garde.
+
+	Il n'y a **aucun** message de parade : le client dit seulement quand il a levé
+	sa garde, et le serveur en dérive la fenêtre (ADR-002). Le refus est renvoyé
+	avec son code — `ParryCooldown` notamment, sans quoi un joueur qui rouvre trop
+	tôt verrait sa garde ne pas monter sans savoir pourquoi.
+
+	La fermeture n'est jamais refusée pour cause de ressource : `Blocking -> Idle`
+	ne coûte rien. Elle peut en revanche être refusée par la table de transitions
+	si le joueur n'est plus en garde (étourdi par un guard break, par exemple), et
+	c'est correct — l'état a déjà été changé par l'autorité.
+]]
+local function onBlockState(player: Player, payload: { open: boolean, clientTime: number })
+	local combatant = StateService.ofPlayer(player)
+	if combatant == nil then
+		return
+	end
+
+	local balance = TuningService.balance()
+	local fresh = HitValidator.checkTimestamp(
+		payload.clientTime,
+		Clock.now(),
+		balance.Network.ClockTolerance,
+		balance.Network.MaxRewind
+	)
+	if not fresh.ok then
+		-- Un horodatage hors fenêtre sur une OUVERTURE est refusé : il ancrerait
+		-- une fenêtre de parade dans un passé qu'on ne sait plus arbitrer. Sur une
+		-- fermeture, il n'ancre rien — on laisse donc la garde retomber plutôt que
+		-- de coincer le joueur en position haute à cause d'une dérive d'horloge.
+		if payload.open then
+			refuse(player, Definitions.UNSEQUENCED, fresh.code)
+			return
+		end
+	end
+
+	local target: CombatTypes.StateName = if payload.open then "Blocking" else "Idle"
+	local entered = StateService.requestTransition(combatant, target, payload.clientTime)
+	if not entered.ok then
+		refuse(player, Definitions.UNSEQUENCED, entered.code)
+		return
+	end
+
+	if payload.open then
+		StateService.tagCombat(combatant)
+	end
 end
 
 local function onHitReport(
@@ -201,6 +270,7 @@ end
 
 function CombatService.Init()
 	Net.Server.on(Definitions.CombatAttack, onAttack)
+	Net.Server.on(Definitions.CombatBlockState, onBlockState)
 	Net.Server.on(Definitions.CombatHitReport, onHitReport)
 	Log.debug(SCOPE, "handlers de combat enregistrés")
 end

@@ -715,6 +715,143 @@ soit lisible par le défenseur.
 
 ---
 
+## Tranche 1.3 — garde, jauge, guard break, animations
+
+Un mannequin de plus sur le terrain : **`Dummy_Guard`**, à droite (+16 X). Il tient
+sa garde en permanence et la relève dès qu'il la perd. Son panneau affiche
+`vie / max  ▌jauge`.
+
+Il passe par le même chemin qu'un joueur — `requestTransition("Blocking")`,
+cooldown de parade compris. Un mannequin dont l'état serait écrit à la main ne
+prouverait rien sur les règles réelles.
+
+#### T1.3.1 — La garde monte, et elle se lit
+
+1. Appuyer sur **F** (maintenu).
+2. Attendu **immédiatement**, sans attendre le serveur : les avant-bras montent
+   devant le visage, le buste se replie légèrement.
+3. Panneau **F2**, section **Garde** → « Demandée / accordée » passe à `oui / oui`
+   en un aller-retour. Section **État** → `Blocking`.
+4. Se déplacer : la vitesse tombe à 55 % (marche nettement plus lente).
+5. Relâcher **F** : la pose redescend, l'état revient à `Idle`.
+
+**Ce que ça prouve.** La prédiction locale monte la pose dans la frame de l'appui.
+C'est la condition de la parade en 1.4 : à 150 ms de latence, attendre le serveur
+ferait apparaître la garde après la fermeture de la fenêtre de 200 ms.
+
+Vérifier la lisibilité, qui est le critère de la tranche : la pose doit être
+reconnaissable **avant** 0,10 s. Régler la latence simulée à 300 dans F2 et
+réappuyer — la pose doit monter **exactement aussi vite**. Si elle attend, la
+prédiction ne fonctionne pas.
+
+#### T1.3.2 — 35 % des dégâts en garde
+
+Frapper **`Dummy_Guard`** une fois.
+
+Attendu :
+- panneau du mannequin : `Blocked −2` (8 × 0,35 = 2,8, affiché tronqué) ;
+- la jauge passe de **60 à 52** — huit points, soit les dégâts **bruts**.
+
+L'écart entre les deux nombres est le cœur de l'équilibrage : la vie ne prend que
+la fraction réduite, la jauge prend le coup entier. Une garde ne devient pas plus
+solide parce qu'elle protège bien.
+
+Comparer avec `Dummy_Face` (sans garde) : `Hit −8`, jauge intacte.
+
+#### T1.3.3 — La jauge se vide et la garde casse
+
+Enchaîner sur `Dummy_Guard` sans laisser la jauge se régénérer.
+
+Attendu, jauge de 60 : `−8, −8, −9, −14` sur la première chaîne, soit **21
+restants**. La deuxième chaîne casse au deuxième ou troisième coup.
+
+Pour aller plus vite, F2 → **« Jauge de garde »** à `20` : la rupture tombe alors
+au troisième coup. C'est exactement l'usage prévu du panneau — régler en frappant,
+sans rien recompiler. **« Régén. de la garde »**, **« Délai avant régén. de
+garde »** et **« Vitesse en garde »** sont réglables de la même façon.
+
+À la rupture :
+- panneau du mannequin : `Blocked` puis l'état passe à **`Stunned`** ;
+- les bras s'ouvrent en grand, le buste part en arrière — la pose la plus ample
+  du jeu, elle annonce l'ouverture ;
+- la jauge est **repartie à 60**, pas à 0 ;
+- 1,6 s plus tard, l'état revient à `Idle` et le mannequin **remonte sa garde**.
+
+**Ce que ça prouve.** La punition est l'étourdissement, pas des dégâts doublés.
+Et la jauge restaurée empêche le guard break de devenir un verrou : sans elle, le
+coup suivant recasserait immédiatement.
+
+Frapper pendant les 1,6 s : les coups passent en `Hit` à dégâts pleins — c'est
+l'ouverture, et c'est ce qui rend le guard break rentable.
+
+#### T1.3.4 — La régénération, et son délai
+
+1. Entamer la jauge de `Dummy_Guard` (deux ou trois coups).
+2. **Ne plus frapper** et regarder le panneau.
+
+Attendu : rien pendant **1,5 s**, puis remontée à **12 points par seconde**
+jusqu'à 60. Un compte à rebours qui repart à chaque coup encaissé : frapper une
+fois par seconde empêche toute régénération.
+
+#### T1.3.5 — La garde ne s'ouvre pas n'importe quand
+
+Trois refus à provoquer, tous lisibles dans **F2 → Garde → « Dernier refus »** :
+
+1. **Pendant la récupération d'une attaque** — cliquer, puis appuyer sur F
+   aussitôt. Attendu : `local:TransitionForbidden`. Rater un coup doit coûter ;
+   la récupération n'est pas annulable par la garde (COMBAT.md §1.3).
+2. **Trop tôt après une ouverture** — appuyer/relâcher F rapidement deux fois.
+   Attendu : `local:ParryCooldown` sur la seconde (0,55 s).
+3. **À endurance insuffisante** — dans F2, monter **« Seuil d'action »** à `50`,
+   puis sprinter jusqu'à passer sous 50 et appuyer sur F. Attendu :
+   `local:NotEnoughStamina`. Remettre le seuil à 10 ensuite.
+
+   Passer par le réglage plutôt que par la valeur nominale n'est pas un
+   contournement : à 10, le sprint s'arrête lui-même au seuil et l'endurance
+   remonte dans la frame suivante, si bien que la fenêtre de refus dure quelques
+   dizaines de millisecondes et ne s'observe pas de façon fiable.
+
+Ces trois refus sont **prédits localement** : rien ne part sur le réseau. La ligne
+« Demandée / accordée » reste à `non / non`.
+
+#### T1.3.6 — Le repli procédural couvre tout ce qui est atteignable
+
+Panneau **F2 → Performance → « Animations »** : affiche `0 asset(s) · N pose(s)
+active(s)`. Zéro asset est l'état **normal** aujourd'hui — `Config/Animations` ne
+contient que des `0`.
+
+Vérifier que chaque état atteignable produit quelque chose :
+
+| Provoquer | Attendu à l'écran |
+|---|---|
+| Cliquer (chaîne de 4) | Quatre poses distinctes, d'amplitude croissante |
+| Maintenir F | Garde levée, tenue |
+| Se faire casser la garde *(sur le mannequin)* | Bras grand ouverts |
+| Frapper 4 coups sur `Dummy_Face` | Le mannequin n'a pas de rig : pas de pose, seulement son panneau |
+
+**Le boot est le vrai test de couverture.** `ConfigValidator` exige que chaque clé
+d'animation soit servie par un asset, une pose, ou une déclaration `Pending`.
+Pour le vérifier, supprimer temporairement l'entrée `ParrySuccess` de
+`Poses.Pending` : le serveur doit **refuser de démarrer** avec
+`Animations.ParrySuccess n'a ni asset (id = 0), ni pose procédurale, ni entrée
+dans Poses.Pending`. Remettre l'entrée ensuite.
+
+#### T1.3.7 — Ce qui n'est PAS encore visible
+
+En test à deux clients Studio : **la garde de l'autre joueur ne se voit pas**.
+
+Ce n'est pas un défaut de la tranche, c'est une dette datée et documentée
+(PHASE1.md §5, ADR-018). `Motor6D.Transform` n'est pas répliqué, donc chaque
+client doit poser lui-même les personnages qu'il affiche, et il lui faut leur état
+— que le serveur n'envoie aujourd'hui qu'au propriétaire. C'est le **premier point
+de la tranche 1.4**, avant la parade, parce que lire la garde adverse est
+précisément ce sur quoi la parade se joue.
+
+Ce qui est visible à deux dès maintenant : les dégâts, les verdicts, les états
+dans F2, et le ralentissement en garde.
+
+---
+
 ### Tranches suivantes
 
 

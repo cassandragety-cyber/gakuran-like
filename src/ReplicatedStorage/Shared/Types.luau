@@ -151,6 +151,21 @@ export type AttackIntent = {
 }
 
 --[[
+	Ouverture ou fermeture de la garde. **Il n'existe pas de message « j'ai
+	paré »** : le client décrit l'instant où il a levé la garde, le serveur seul
+	décide si un coup tombe dans la fenêtre (ADR-002, COMBAT.md §4). C'est la
+	différence entre déclarer une intention et réclamer un résultat, et c'est ce
+	qui rend la parade non triviale à tricher.
+
+	`clientTime` est l'instant de l'appui sur l'horloge commune. Il ancre la
+	fenêtre de parade, jamais le cooldown qui la gouverne (ADR-017).
+]]
+export type BlockIntent = {
+	open: boolean,
+	clientTime: number,
+}
+
+--[[
 	Contacts détectés localement par le client.
 
 	Les cibles sont des `Instance` : un mannequin d'entraînement n'est pas un
@@ -176,6 +191,16 @@ export type HitResult = {
 	target: Instance,
 	targetHealth: number,
 	hitstop: number,
+	--[[
+		La garde du défenseur a-t-elle cédé sur ce coup ? Le verdict reste
+		`Blocked` : c'est un effet de bord du blocage, pas un cinquième verdict.
+
+		Les deux camps en ont besoin pour jouer la bonne chose — le défenseur une
+		rupture de garde plutôt qu'un simple encaissement, l'attaquant le signal
+		qu'une ouverture d'1,6 s vient de s'ouvrir. N'apprend rien qu'ils ne
+		puissent déjà voir à l'écran.
+	]]
+	guardBroken: boolean,
 }
 
 --[[

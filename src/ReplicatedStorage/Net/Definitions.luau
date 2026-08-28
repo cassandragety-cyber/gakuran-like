@@ -48,6 +48,19 @@ export type AnyDefinition = Definition<any>
 local Definitions = {}
 
 --[[
+	Numéro de séquence réservé aux refus de demandes NON SÉQUENCÉES.
+
+	Toutes les demandes ne portent pas de `seq` : `Combat.BlockState` ne transporte
+	qu'un booléen et un horodatage. Leurs refus reviennent pourtant par le même
+	remote que ceux des attaques, sans champ qui les distingue — c'est ce 0 qui
+	les trie, et les attaques numérotent donc à partir de 1.
+
+	Vit ici parce que c'est un point de contrat entre le serveur qui l'écrit et le
+	client qui le lit : dupliqué des deux côtés, il dériverait.
+]]
+Definitions.UNSEQUENCED = 0
+
+--[[
 	Mesure de latence et de dérive d'horloge. Utilisé par DiagnosticsService pour
 	vérifier en conditions réelles l'hypothèse centrale d'ADR-001 (le rembobinage
 	borné à 250 ms couvre le ping des joueurs).
@@ -112,6 +125,17 @@ Definitions.CombatAttack = {
 } :: Definition<Types.AttackIntent>
 
 --[[
+	Ouverture / fermeture de la garde. Le client n'y déclare jamais une parade :
+	il date son appui, le serveur arbitre (ADR-002).
+]]
+Definitions.CombatBlockState = {
+	id = "Combat.BlockState",
+	direction = "ClientToServer",
+	rateLimit = "CombatBlock",
+	parse = CombatParsers.parseBlockIntent,
+} :: Definition<Types.BlockIntent>
+
+--[[
 	Contacts détectés par le client. Le plafond de cibles est appliqué par le
 	parseur, avec la valeur d'équilibrage : un rapport surdimensionné est rejeté
 	avant d'avoir coûté un seul rembobinage.
@@ -151,6 +175,7 @@ Definitions.List = {
 	Definitions.CombatStateSync :: AnyDefinition,
 	Definitions.MoveSprintState :: AnyDefinition,
 	Definitions.CombatAttack :: AnyDefinition,
+	Definitions.CombatBlockState :: AnyDefinition,
 	Definitions.CombatHitReport :: AnyDefinition,
 	Definitions.CombatHitResult :: AnyDefinition,
 	Definitions.CombatRefusal :: AnyDefinition,

@@ -64,6 +64,10 @@ local Balance = {
 		MaxChainLength = 5,
 		-- Temps avant que la chaîne ne reparte à zéro après un coup dans le vide.
 		WhiffResetDelay = 0.8,
+		-- Seuil de dégâts au-dessus duquel le défenseur joue la réaction lourde
+		-- plutôt que la légère. Placé entre le 3e coup (9) et le finisher (14) :
+		-- c'est le finisher qui doit se voir encaisser différemment.
+		HeavyHitDamage = 12,
 	},
 
 	--[[
