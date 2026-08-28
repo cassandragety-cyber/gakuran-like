@@ -135,9 +135,10 @@ local rows: { Format.Readout } = {
 			]]
 			local color = if requested == granted then Theme.Colors.Text else Theme.Colors.Warning
 			return string.format(
-				"%s / %s",
+				"%s / %s  ·  %d demande(s)",
 				if requested then "oui" else "non",
-				if granted then "oui" else "non"
+				if granted then "oui" else "non",
+				GuardController.sentCount()
 			),
 				color
 		end,

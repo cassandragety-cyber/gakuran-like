@@ -94,6 +94,20 @@ function Procedural.play(key: string, duration: number, looped: boolean): boolea
 		return false
 	end
 
+	--[[
+		Une pose TENUE déjà en cours n'est pas relancée : elle est maintenue.
+
+		La distinction compte dès qu'une intention se ré-affirme — la garde est
+		redemandée toutes les demi-secondes tant que la touche est enfoncée et que
+		l'autorité n'a pas suivi. Redémarrer relancerait la montée à chaque essai,
+		et la garde pulserait à l'écran. Une pose non tenue, elle, doit bien
+		repartir : deux coups identiques d'affilée sont deux coups.
+	]]
+	local existing = playing[key]
+	if looped and existing ~= nil and existing.releasedAt == nil then
+		return true
+	end
+
 	playing[key] = {
 		pose = pose,
 		startedAt = Clock.monotonic(),

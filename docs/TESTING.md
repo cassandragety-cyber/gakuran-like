@@ -732,6 +732,12 @@ prouverait rien sur les règles réelles.
    devant le visage, le buste se replie légèrement.
 3. Panneau **F2**, section **Garde** → « Demandée / accordée » passe à `oui / oui`
    en un aller-retour. Section **État** → `Blocking`.
+
+   Le compteur de demandes à droite doit rester à **1 par levée**. S'il monte de
+   0,5 s en 0,5 s, l'autorité refuse et le client ré-affirme : l'Output serveur
+   porte alors `garde refusée … (état serveur : X)`, qui nomme la raison. Le cas
+   attendu est `X = Attacking`, quand on appuie sur F juste après une attaque —
+   l'état serveur survit une latence à celui du client.
 4. Se déplacer : la vitesse tombe à 55 % (marche nettement plus lente).
 5. Relâcher **F** : la pose redescend, l'état revient à `Idle`.
 

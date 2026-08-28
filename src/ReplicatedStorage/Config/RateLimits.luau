@@ -43,11 +43,13 @@ local RateLimits = {
 	-- le client rapporte plus de contacts qu'il n'a lancé de coups.
 	CombatHitReport = { capacity = 8, refillPerSecond = 4 } :: Limit,
 
-	-- Garde : deux messages par levée (ouverture, fermeture), et le cooldown de
-	-- parade (0,55 s) plafonne déjà les ouvertures utiles à moins de 2/s. La
-	-- rafale couvre un joueur qui tapote, la cadence soutenue non — et un
-	-- martèlement ne gagne rien, puisque `canBlock` refuse hors cooldown.
-	CombatBlock = { capacity = 6, refillPerSecond = 3 } :: Limit,
+	-- Garde : deux messages par levée, plus les ré-affirmations. Maintenir la
+	-- touche est une intention CONTINUE — si l'autorité refuse l'ouverture, le
+	-- client redemande toutes les 0,5 s jusqu'à ce qu'elle passe — donc 2/s en
+	-- régime tendu. La cadence soutenue laisse cette marge ; la rafale couvre un
+	-- joueur qui tapote. Un martèlement ne gagne rien pour autant : `canBlock`
+	-- refuse hors du cooldown de parade.
+	CombatBlock = { capacity = 8, refillPerSecond = 4 } :: Limit,
 
 	-- Verdicts et refus, sens serveur -> client uniquement.
 	CombatFeedback = { capacity = 60, refillPerSecond = 30 } :: Limit,

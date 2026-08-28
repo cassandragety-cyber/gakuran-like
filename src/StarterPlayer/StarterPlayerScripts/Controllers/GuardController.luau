@@ -40,9 +40,25 @@ GuardController.Dependencies = {
 local held = false
 local lastRefusal: string? = nil
 local lastRefusalAt = 0
+local sentCount = 0
+local lastSentAt = 0
+
+--[[
+	Intervalle minimal entre deux demandes d'ouverture.
+
+	Deux contraintes le fixent. En bas, la cadence de `Combat.BlockState`
+	(8 en rafale, 4/s) : redemander plus vite déclencherait une infraction. En
+	haut, le confort : au-delà d'une demi-seconde, un joueur qui maintient sa
+	garde sentirait le retard au moment où l'autorité redevient disponible.
+]]
+local RETRY_INTERVAL = 0.5
 
 function GuardController.isHeld(): boolean
 	return held
+end
+
+function GuardController.sentCount(): number
+	return sentCount
 end
 
 function GuardController.lastRefusal(): (string?, number)
@@ -57,6 +73,8 @@ local function send(open: boolean)
 		return
 	end
 
+	sentCount += 1
+	lastSentAt = Clock.monotonic()
 	Net.Client.fire(Definitions.CombatBlockState, {
 		open = open,
 		-- L'instant de l'APPUI, pas celui de l'envoi. C'est lui qui ancre la
@@ -144,15 +162,53 @@ local function reconcile()
 		return
 	end
 	local authoritative = StateMirrorController.authoritative()
-	if authoritative == nil or not GUARD_LOST[authoritative.name] then
+	if authoritative == nil then
 		return
 	end
 
-	held = false
-	AnimationController.stop("BlockStart")
-	AnimationController.stop("BlockHold")
-	lastRefusal = `autorité:{authoritative.name}`
-	lastRefusalAt = Clock.monotonic()
+	if GUARD_LOST[authoritative.name] then
+		held = false
+		AnimationController.stop("BlockStart")
+		AnimationController.stop("BlockHold")
+		lastRefusal = `autorité:{authoritative.name}`
+		lastRefusalAt = Clock.monotonic()
+		return
+	end
+
+	if authoritative.name == "Blocking" then
+		return
+	end
+
+	--[[
+		La touche est enfoncée, l'autorité n'accorde pas la garde, et rien ne la
+		lui a retirée : c'est une demande qui n'est pas passée. On redemande.
+
+		**C'est le défaut central de la première version.** Maintenir la touche
+		n'envoyait qu'UN message : un refus — le plus courant étant un serveur qui
+		croit encore le joueur en attaque, son état expirant une latence après
+		celui du client — laissait le joueur touche enfoncée, pose levée, et sans
+		garde, jusqu'à ce qu'il relâche et rappuie. Une intention maintenue doit
+		être maintenue, pas tentée une fois.
+
+		Le nouvel essai passe par la prédiction locale : tant qu'elle refuse, rien
+		ne part sur le réseau et le refus reste lisible dans le panneau.
+	]]
+	local now = Clock.monotonic()
+	if now - lastSentAt < RETRY_INTERVAL then
+		return
+	end
+
+	local attempt = StateMirrorController.tryPredict("Blocking")
+	if not attempt.ok then
+		lastRefusal = `local:{attempt.code}`
+		lastRefusalAt = now
+		return
+	end
+
+	-- La pose a pu être relâchée entre-temps ; la relancer est sans effet si elle
+	-- tourne déjà, la lecture étant indexée par clé.
+	AnimationController.play("BlockHold")
+	send(true)
 end
 
 function GuardController.Init()

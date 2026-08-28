@@ -682,6 +682,28 @@ classes n'est plus qu'un filtre rapide, et la capacité est **testée** au
 recensement plutôt que supposée. Ce critère survivra à la prochaine classe de
 jointure ; une liste ne l'aurait pas fait.
 
+**Quatrième cause, sur un tout autre plan : une intention maintenue n'était
+tentée qu'une fois.** Le rig résolu, les poses ne montaient toujours pas, et le
+panneau disait `Blocking -> Idle` **sans refus serveur récent**.
+
+Maintenir la touche de garde n'envoyait qu'UN `open = true`. Un refus — le plus
+probable étant un serveur qui croit encore le joueur en attaque, son état
+expirant une latence après celui du client — laissait le joueur touche enfoncée,
+pose levée localement, et **sans garde**, jusqu'à ce qu'il relâche et rappuie.
+Aucun nouveau `Begin` ne se produit tant qu'une touche reste enfoncée.
+
+La règle : **une intention continue se ré-affirme.** Tant que la touche est
+tenue et que l'autorité n'accorde pas la garde sans la lui avoir retirée, le
+client redemande toutes les 0,5 s, en passant par la prédiction locale pour ne
+rien envoyer d'illégal. Le pendant côté pose : une pose tenue déjà en cours n'est
+pas relancée mais maintenue, sinon la garde pulserait à chaque ré-affirmation.
+
+Cela met par ailleurs en évidence, avec la mesure qu'ADR-017 réclamait, le coût
+de ne pas ancrer `state.enteredAt` : l'attaque serveur survit à l'attaque client
+d'une latence, et toute demande de garde tombant dans cet intervalle est refusée.
+Le nouvel essai la rattrape ; l'ancrage la supprimerait à la source. Décision à
+prendre en 1.4, désormais documentée par une observation et non par une intuition.
+
 **Le vrai enseignement est sur le diagnostic, pas sur les jointures.** Trois
 hypothèses successives — nommage R6, course de réplication, classe de jointure —
 dont deux fausses, et trois allers-retours de recette. À chaque fois le

@@ -164,6 +164,10 @@ end
 local function onBlockState(player: Player, payload: { open: boolean, clientTime: number })
 	local combatant = StateService.ofPlayer(player)
 	if combatant == nil then
+		-- Refus explicite plutôt que retour muet. La version précédente sortait en
+		-- silence ici : le client voyait alors sa prédiction contredite sans le
+		-- moindre code, ce qui est exactement la panne qu'on s'interdit.
+		refuse(player, Definitions.UNSEQUENCED, "NoCombatant")
 		return
 	end
 
@@ -185,9 +189,17 @@ local function onBlockState(player: Player, payload: { open: boolean, clientTime
 		end
 	end
 
+	local previous = combatant.state.name
 	local target: CombatTypes.StateName = if payload.open then "Blocking" else "Idle"
 	local entered = StateService.requestTransition(combatant, target, payload.clientTime)
 	if not entered.ok then
+		-- Journalisé avec l'état de DÉPART : « refusé » seul ne dit pas pourquoi,
+		-- et le pourquoi est presque toujours l'état dans lequel le serveur croyait
+		-- le joueur — typiquement une attaque que le client a déjà vue finir.
+		Log.debug(
+			SCOPE,
+			`garde refusée à {player.Name} : {entered.code} (état serveur : {previous})`
+		)
 		refuse(player, Definitions.UNSEQUENCED, entered.code)
 		return
 	end
