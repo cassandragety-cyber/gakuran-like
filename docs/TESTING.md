@@ -890,6 +890,73 @@ require(game.Players.LocalPlayer.PlayerScripts.Client.Controllers.AnimationContr
 Une ligne `[PoseProbe]` par frame pendant une seconde, avec les mêmes quatre
 informations. Maintenir F **pendant** la capture.
 
+#### T1.3.6c — Bisection : le moteur Roblox, sans notre code
+
+À utiliser quand tout notre instrumentation dit « ça marche » et que le
+personnage ne bouge pas : `10/10 Motor6D`, 6 écritures par frame, 85° nominal,
+relu intact, boucles vivantes. À ce stade la question n'est plus « notre système
+écrit-il ? » mais « écrire déplace-t-il quoi que ce soit ? », et seule une
+manipulation **indépendante de notre code** peut y répondre.
+
+Les trois tests dans cet ordre, barre de commande en **Client**.
+
+**A — Le joint pilote-t-il le membre ? (`C0`, sans boucle)**
+
+```lua
+local m = game.Players.LocalPlayer.Character:FindFirstChild("RightShoulder", true)
+print(m:GetFullName(), m.ClassName, m.Part0, m.Part1)
+m.C0 = m.C0 * CFrame.Angles(math.rad(-85), 0, 0)
+```
+
+`C0` est le repos de la jointure : **rien ne le réécrit**, contrairement à
+`Transform` que l'`Animator` repose à chaque frame. Une seule écriture suffit
+donc, et le résultat est sans ambiguïté.
+
+- **Le bras se lève** → le joint pilote bien le membre. Le problème est propre à
+  `Transform` : ordre d'exécution ou écrasement. Passer à B.
+- **Rien ne bouge** → ce `Motor6D` ne pilote pas ce membre. Le problème est en
+  amont de toute animation, et `Part0` / `Part1` affichés par le `print` diront
+  quoi. Notre système de poses est alors hors de cause.
+
+Pour annuler : rejouer la ligne avec `math.rad(85)`, ou respawn.
+
+**B — `Transform` écrit le plus tard possible**
+
+```lua
+local m = game.Players.LocalPlayer.Character:FindFirstChild("RightShoulder", true)
+game:GetService("RunService"):BindToRenderStep("ProbeManuel", 2000, function()
+    m.Transform = CFrame.Angles(math.rad(-85), 0, 0)
+end)
+```
+
+Priorité **2000** (`RenderPriority.Last`) au lieu des 301 de notre moteur.
+
+- **Ça bouge** → notre priorité est trop tôt : quelque chose repose `Transform`
+  entre 301 et le rendu. Correction dans `Procedural`, une constante.
+- **Ça ne bouge pas alors que A bougeait** → écrire `Transform` ne pose pas ce
+  personnage, quelle que soit la priorité. La voie procédurale est morte et il
+  faut passer aux vraies animations (option D du plan).
+
+Pour arrêter : `game:GetService("RunService"):UnbindFromRenderStep("ProbeManuel")`.
+
+**C — Sans le script `Animate` de Roblox**
+
+```lua
+local c = game.Players.LocalPlayer.Character
+c.Animate.Disabled = true
+for _, t in c.Humanoid.Animator:GetPlayingAnimationTracks() do
+    t:Stop()
+end
+```
+
+Puis rejouer B. Si B ne marchait pas et marche maintenant, c'est l'animation
+d'idle qui repose les jointures après nous — cas classique, et qui se corrige
+par la priorité ou par une piste d'animation de priorité supérieure.
+
+**Ce que ça prouve dans tous les cas.** Chacune des trois issues désigne un
+endroit différent, et aucune ne dépend de notre code. C'est la manipulation
+qu'il aurait fallu faire au deuxième aller-retour, pas au neuvième.
+
 #### T1.3.7 — Ce qui n'est PAS encore visible
 
 En test à deux clients Studio : **la garde de l'autre joueur ne se voit pas**.

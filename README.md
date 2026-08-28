@@ -55,7 +55,19 @@ ProfileStore, déclaré `realm = "server"`, atterrit dans le second.
 
 ## Le rig doit rester en `Motor6D`
 
-`default.project.json` force `StarterPlayer.AvatarJointUpgrade = "Disabled"`.
+**Étape manuelle, à faire une fois par place.** Dans Studio, sélectionner
+`StarterPlayer` dans l'Explorer et passer **`AvatarJointUpgrade`** à
+**`Disabled`**.
+
+`default.project.json` déclare bien cette propriété, mais **Rojo ne l'applique
+pas** : constaté après `git pull` puis Disconnect/Connect, la place restait sur
+`Enabled`. La déclaration est conservée pour un `rojo build` depuis zéro et pour
+dire l'intention, elle ne remplace pas le réglage à la main. Une place clonée
+neuve doit donc passer par l'Explorer.
+
+Ce qui rattrape l'oubli : un rig non pilotable produit une **erreur explicite au
+boot** et un `NON PILOTABLE` rouge dans le panneau F2 (ADR-018). Le réglage n'est
+pas reproductible automatiquement, mais son absence n'est jamais silencieuse.
 
 Ce n'est pas cosmétique. Les rigs récents articulent le personnage avec des
 `AnimationConstraint`, résolues par le moteur physique. Le repli d'animation

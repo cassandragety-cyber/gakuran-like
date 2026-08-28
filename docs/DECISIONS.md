@@ -714,9 +714,20 @@ contrainte est résolue par la physique, pas par la couche d'animation où l'on
 écrit.
 
 **Décision (validée avec le produit) : `StarterPlayer.AvatarJointUpgrade =
-"Disabled"`** dans `default.project.json`. Une ligne, versionnée, reproductible
-sur toute machine qui clone — pas un réglage Studio à réexpliquer. Le rig
-redevient `Motor6D` et tout le code existant fonctionne sans modification.
+"Disabled"`.** Le rig redevient `Motor6D` et tout le code existant fonctionne
+sans modification.
+
+**Correction d'une affirmation fausse.** J'avais présenté la déclaration dans
+`default.project.json` comme « versionnée, reproductible sur toute machine qui
+clone ». **Rojo ne l'applique pas** : constaté en recette, la place restait sur
+`Enabled` après `git pull` et reconnexion. La déclaration reste pour un
+`rojo build` depuis zéro et pour porter l'intention, mais **le réglage est
+manuel**, une fois par place, et le README le dit désormais comme tel. J'ai
+annoncé une garantie sans la vérifier ; c'est exactement la faute d'ADR-018 —
+un invariant énoncé que rien ne contrôle.
+
+Ce qui rattrape l'oubli est le garde-fou ci-dessous : le réglage n'est pas
+reproductible automatiquement, mais son absence n'est jamais silencieuse.
 
 C'est un réglage de **développement**, et il est daté : les vraies animations
 uploadées (option D du plan) restent la fin de l'histoire, prévues pour la
