@@ -13,12 +13,21 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Controllers = script.Parent.Parent.Parent.Parent.Controllers
 local AnimationController = require(Controllers.AnimationController)
 local CombatController = require(Controllers.CombatController)
+local CombatFeedbackController = require(Controllers.CombatFeedbackController)
 local DiagnosticsController = require(Controllers.DiagnosticsController)
 local Format = require(script.Parent.Format)
 local InputController = require(Controllers.InputController)
 local Profiler = require(ReplicatedStorage.Shared.Profiler)
 local StateMirrorController = require(Controllers.StateMirrorController)
 local Theme = require(script.Parent.Parent.Parent.Theme)
+
+-- État de l'échantillonnage des cadences. Une lecture de panneau seule ne dit
+-- rien d'une cadence : il faut deux points et l'écart de temps entre eux.
+local lastRenderFrames = 0
+local lastLogicFrames = 0
+local lastLoopSampleAt = 0
+local renderRate = 0
+local logicRate = 0
 
 local rows: { Format.Readout } = {
 	{
@@ -130,6 +139,39 @@ local rows: { Format.Readout } = {
 				elseif resolved < required then Theme.Colors.Warning
 				else Theme.Colors.Good
 			return string.format("%s · %d/%d jointures", rig, resolved, required), color
+		end,
+	},
+	{
+		section = "Performance",
+		label = "Boucles",
+		read = function(now: number): (string, Color3?)
+			--[[
+				Vivacité des deux boucles qui produisent le retour visuel, mesurée de
+				L'EXTÉRIEUR.
+
+				C'est la mesure qui manquait et dont l'absence a coûté un tour : la
+				sonde ne rendait compte que depuis l'intérieur de la boucle de rendu.
+				Une boucle morte produisait donc exactement le même silence qu'une
+				boucle vivante sans rien à écrire, et les deux ne se corrigent pas au
+				même endroit — l'une est un problème d'accrochage au rendu, l'autre de
+				déclenchement de pose.
+
+				Un instrument doit pouvoir rendre compte de son propre silence.
+			]]
+			local render = AnimationController.renderFrames()
+			local logic = CombatFeedbackController.followFrames()
+
+			local elapsed = now - lastLoopSampleAt
+			if elapsed >= 0.25 then
+				renderRate = (render - lastRenderFrames) / elapsed
+				logicRate = (logic - lastLogicFrames) / elapsed
+				lastRenderFrames, lastLogicFrames, lastLoopSampleAt = render, logic, now
+			end
+
+			local color = if renderRate < 1 or logicRate < 1
+				then Theme.Colors.Accent
+				else Theme.Colors.Good
+			return string.format("rendu %.0f/s · logique %.0f/s", renderRate, logicRate), color
 		end,
 	},
 	{

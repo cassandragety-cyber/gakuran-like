@@ -59,6 +59,10 @@ local readBackAngle: number? = nil
 
 local captureUntil = 0
 local linesLeft = 0
+local linesEmitted = 0
+-- Nombre de passages dans la boucle de rendu, lu de l'extérieur pour distinguer
+-- « la boucle ne tourne pas » de « la boucle tourne sans rien écrire ».
+local frames = 0
 
 --[[
 	Angle total d'un CFrame, en degrés. Un seul nombre suffit à distinguer
@@ -75,9 +79,38 @@ end
 	client via `AnimationController.probe(secondes)`.
 ]]
 function Probe.capture(seconds: number)
-	captureUntil = Clock.monotonic() + math.clamp(seconds, 0.1, 10)
+	local window = math.clamp(seconds, 0.1, 10)
+	local startedFrames = frames
+
+	captureUntil = Clock.monotonic() + window
 	linesLeft = MAX_LINES
-	Log.info(SCOPE, `capture démarrée pour {string.format("%.1f", seconds)} s`)
+	linesEmitted = 0
+	Log.info(SCOPE, `capture démarrée pour {string.format("%.1f", window)} s`)
+
+	--[[
+		Une capture qui n'émet RIEN doit le dire.
+
+		Sans cette conclusion, une boucle de rendu morte produit le même Output
+		qu'une capture lancée hors combat : rien. C'est ce silence-là qui a coûté un
+		aller-retour — l'instrument doit rendre compte de sa propre absence de
+		mesure, sinon il ne renseigne que les cas où tout va déjà bien.
+	]]
+	task.delay(window + 0.2, function()
+		if linesEmitted > 0 then
+			Log.info(SCOPE, `capture terminée : {linesEmitted} frame(s) mesurée(s)`)
+			return
+		end
+		if frames == startedFrames then
+			Log.error(
+				SCOPE,
+				"capture terminée : AUCUNE frame exécutée. La boucle de rendu des poses "
+					.. "n'a pas tourné une seule fois — le problème est l'accrochage au "
+					.. "rendu, pas les poses ni les jointures."
+			)
+		else
+			Log.warn(SCOPE, "capture terminée : la boucle tourne mais n'a rien journalisé")
+		end
+	end)
 end
 
 --[[
@@ -118,9 +151,26 @@ function Probe.wrote(jointName: string, className: string, value: CFrame)
 	end
 end
 
+--[[
+	Compteur de vivacité de la boucle de rendu.
+
+	C'est la mesure qui manquait, et son absence a coûté un tour de plus : la
+	sonde ne rendait compte que **depuis l'intérieur** d'`update`. Une boucle qui
+	ne tourne pas produit donc exactement le même silence qu'une boucle qui tourne
+	sans rien écrire — et les deux ne se corrigent pas au même endroit.
+
+	Lu de l'extérieur, par le panneau, ce compteur sépare les deux sans ambiguïté.
+	Règle générale : **un instrument doit pouvoir rendre compte de son propre
+	silence**, sinon il ne mesure que les cas où tout va déjà bien.
+]]
 function Probe.beginFrame()
+	frames += 1
 	writeCount = 0
 	table.clear(writtenNames)
+end
+
+function Probe.frames(): number
+	return frames
 end
 
 function Probe.endFrame()
@@ -128,6 +178,7 @@ function Probe.endFrame()
 		return
 	end
 	linesLeft -= 1
+	linesEmitted += 1
 
 	if writeCount == 0 then
 		Log.info(

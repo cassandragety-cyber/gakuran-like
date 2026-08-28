@@ -45,6 +45,9 @@ local lastSignature: string? = nil
 -- Dernière clé TENUE jouée. Retenue pour pouvoir l'arrêter : une pose bouclée ne
 -- s'arrête que si quelqu'un le lui demande.
 local lastKey: string? = nil
+-- Vivacité de la boucle d'état, lue de l'extérieur. Une boucle morte et une
+-- boucle qui n'a rien à jouer produisent le même écran ; ce compteur les sépare.
+local followFrames = 0
 -- `-inf` et non 0 : `monotonic` part de zéro au lancement du client, si bien
 -- qu'un 0 signifierait « en combat » pendant les quatre premières secondes de la
 -- partie, et la posture de combat s'afficherait au spawn.
@@ -94,6 +97,7 @@ local function inCombat(): boolean
 end
 
 local function follow()
+	followFrames += 1
 	local state = StateMirrorController.predicted()
 	local signature = `{state.name}:{state.chainIndex}`
 	if signature == lastSignature then
@@ -186,6 +190,10 @@ local function onHitResult(payload: Types.HitResult)
 		local heavy = payload.damage >= TuningController.balance().Combat.HeavyHitDamage
 		AnimationController.play(if heavy then "HitHeavy" else "HitLight")
 	end
+end
+
+function CombatFeedbackController.followFrames(): number
+	return followFrames
 end
 
 function CombatFeedbackController.Init()

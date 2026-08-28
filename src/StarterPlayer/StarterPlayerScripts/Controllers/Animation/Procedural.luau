@@ -1,24 +1,20 @@
 --!strict
 --[[
-	Lecture d'une pose procédurale sur les Motor6D du personnage.
+	Lecture d'une pose procédurale sur les jointures du personnage.
 
-	Pourquoi ça existe : ADR-009 pose qu'on développe sans assets d'animation, et
-	qu'un `id = 0` doit produire **quelque chose de lisible** plutôt que rien. Un
-	combat sans retour visuel ne se teste pas — on ne sait ni si on a paré, ni ce
-	qu'on a encaissé.
+	ADR-009 pose qu'on développe sans assets d'animation, et qu'un `id = 0` doit
+	produire **quelque chose de lisible** plutôt que rien : un combat sans retour
+	visuel ne se teste pas.
 
-	Deux détails techniques portent tout le module.
+	Deux détails techniques portent le module. L'ORDRE D'EXÉCUTION d'abord :
+	l'`Animator` réécrit `Transform` à chaque frame pendant l'étape « Character »,
+	donc écrire avant elle ne produit rien. On s'accroche juste après, à
+	`RenderPriority.Character.Value + 1`. Ensuite, `Transform` est un offset
+	RELATIF au repos : on interpole depuis l'identité, ce qui superpose les poses
+	à la locomotion au lieu de lutter contre elle.
 
-	Le premier est l'ORDRE D'EXÉCUTION. L'`Animator` de Roblox réécrit
-	`Motor6D.Transform` à chaque frame pendant l'étape « Character ». Écrire avant
-	elle ne produit rien de visible. On s'accroche donc juste après, via
-	`BindToRenderStep` à `RenderPriority.Character.Value + 1` : nos poses se
-	superposent alors à la locomotion au lieu de lutter contre elle.
-
-	Le second est que `Transform` est un offset RELATIF au repos de la jointure.
-	On interpole donc depuis l'identité, ce qui rend les poses additives : la
-	marche continue de jouer sous une garde levée, exactement comme le ferait une
-	vraie animation sur un `AnimationTrack` de priorité supérieure.
+	`Joints` dit ce qu'est une jointure, `Rig` lesquelles ce personnage possède,
+	`Probe` mesure ce qui est réellement écrit.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -83,6 +79,10 @@ end
 ]]
 function Procedural.capture(seconds: number)
 	Probe.capture(seconds)
+end
+
+function Procedural.renderFrames(): number
+	return Probe.frames()
 end
 
 function Procedural.writeStatus(): (number, string, boolean)
@@ -261,12 +261,32 @@ local function update()
 	Probe.endFrame()
 end
 
+--[[
+	Accroche la boucle de pose au rendu.
+
+	`bound` n'est posé qu'APRÈS un accrochage réussi, et l'échec est journalisé.
+	La version précédente le posait avant : un `BindToRenderStep` qui lève —
+	contexte non client, priorité refusée, callback invalide — laissait donc le
+	panneau annoncer un moteur démarré alors qu'aucune frame ne serait jamais
+	exécutée. Une panne totale déguisée en fonctionnement nominal, c'est-à-dire
+	précisément ce que ce projet s'interdit.
+]]
 function Procedural.Start()
 	if bound then
 		return
 	end
+
+	local ok, err = pcall(function()
+		RunService:BindToRenderStep(BIND_NAME, BIND_PRIORITY, update)
+	end)
+	if not ok then
+		Log.error(
+			SCOPE,
+			`BindToRenderStep a échoué : {err} — aucune pose ne sera jamais écrite`
+		)
+		return
+	end
 	bound = true
-	RunService:BindToRenderStep(BIND_NAME, BIND_PRIORITY, update)
 end
 
 function Procedural.Stop()

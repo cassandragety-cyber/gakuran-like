@@ -241,6 +241,10 @@ function AnimationController.writeStatus(): (number, string, boolean)
 	return Procedural.writeStatus()
 end
 
+function AnimationController.renderFrames(): number
+	return Procedural.renderFrames()
+end
+
 function AnimationController.capture(seconds: number?)
 	Procedural.capture(seconds or 1)
 end
