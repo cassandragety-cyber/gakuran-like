@@ -80,6 +80,32 @@ function InputController.isHeldAction(action: string): boolean
 	return Input.Held[action] == true
 end
 
+--[[
+	La touche de cette action est-elle RÉELLEMENT enfoncée, maintenant ?
+
+	Interroge le matériel plutôt que de rejouer l'historique des fronts. La
+	distinction compte pour les actions maintenues : un front de relâchement peut
+	être délivré sans que le joueur ait relâché — perte de focus de la fenêtre,
+	entrée capturée par une interface — et l'état reconstruit à partir des fronts
+	reste alors faux jusqu'au prochain appui, qui ne viendra pas puisque la touche
+	n'a jamais été relâchée. L'état réel, lui, ne se perd pas.
+
+	Clavier et souris seulement : `IsKeyDown` ne couvre pas les manettes, dont
+	l'état se lit via `GetGamepadState`. À étendre quand le support manette
+	deviendra une exigence (Phase 4, écran de paramètres).
+]]
+function InputController.isDown(action: string): boolean
+	local key = Input.Keys[action]
+	if key and UserInputService:IsKeyDown(key) then
+		return true
+	end
+	local button = Input.MouseButtons[action]
+	if button then
+		return UserInputService:IsMouseButtonPressed(button)
+	end
+	return false
+end
+
 local function resolve(input: InputObject): string?
 	if input.UserInputType == Enum.UserInputType.Keyboard then
 		return keyToAction[input.KeyCode]

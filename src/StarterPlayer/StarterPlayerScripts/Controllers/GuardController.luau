@@ -16,7 +16,6 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AnimationController = require(script.Parent.AnimationController)
 local Clock = require(ReplicatedStorage.Shared.Clock)
 local Definitions = require(ReplicatedStorage.Net.Definitions)
 local InputController = require(script.Parent.InputController)
@@ -31,7 +30,6 @@ local GuardController = {}
 GuardController.Dependencies = {
 	"InputController",
 	"StateMirrorController",
-	"AnimationController",
 }
 
 -- Ce que le joueur DEMANDE, distinct de ce que l'autorité accorde. Les deux
@@ -102,8 +100,6 @@ local function openGuard(): string
 	end
 
 	held = true
-	AnimationController.play("BlockStart")
-	AnimationController.play("BlockHold")
 	send(true)
 	return "garde levée"
 end
@@ -113,12 +109,6 @@ local function closeGuard(): string
 		return "garde déjà baissée"
 	end
 	held = false
-
-	-- La pose retombe sans attendre l'autorité. Un relâchement est toujours
-	-- accordé : rien ne le coûte, et une garde qui resterait affichée le temps
-	-- d'un aller-retour se lirait comme une entrée perdue.
-	AnimationController.stop("BlockStart")
-	AnimationController.stop("BlockHold")
 
 	local attempt = StateMirrorController.tryPredict("Idle")
 	if not attempt.ok then
@@ -158,18 +148,31 @@ local GUARD_LOST: { [string]: boolean } = {
 	retour visuel mentirait au moment précis où il compte le plus.
 ]]
 local function reconcile()
-	if not held then
-		return
-	end
 	local authoritative = StateMirrorController.authoritative()
 	if authoritative == nil then
 		return
 	end
 
+	--[[
+		La touche est physiquement enfoncée mais l'intention a été perdue.
+
+		Un front de relâchement peut être délivré sans que le joueur ait relâché :
+		perte de focus de la fenêtre, entrée capturée par une interface. Se fier au
+		seul front laisse alors la garde baissée touche enfoncée, sans rien pour
+		la relever — aucun nouveau `Begin` ne viendra. On interroge donc l'état
+		RÉEL de la touche, qui est la seule source qui ne se perd pas.
+	]]
+	if not held and InputController.isDown("Block") and not GUARD_LOST[authoritative.name] then
+		Log.debug(SCOPE, `reprise de garde : {openGuard()}`)
+		return
+	end
+
+	if not held then
+		return
+	end
+
 	if GUARD_LOST[authoritative.name] then
 		held = false
-		AnimationController.stop("BlockStart")
-		AnimationController.stop("BlockHold")
 		lastRefusal = `autorité:{authoritative.name}`
 		lastRefusalAt = Clock.monotonic()
 		return
@@ -205,9 +208,6 @@ local function reconcile()
 		return
 	end
 
-	-- La pose a pu être relâchée entre-temps ; la relancer est sans effet si elle
-	-- tourne déjà, la lecture étant indexée par clé.
-	AnimationController.play("BlockHold")
 	send(true)
 end
 

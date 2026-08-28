@@ -50,6 +50,9 @@ type Sample = {
 
 local lastWrites: { [string]: CFrame } = {}
 local sample: Sample? = nil
+-- Noms écrits dans la frame. « Seule Waist bouge ? » est la première question
+-- qu'on se pose devant un témoin unique, et la liste y répond sans ambiguïté.
+local writtenNames: { string } = {}
 local writeCount = 0
 local overwritten = false
 local readBackAngle: number? = nil
@@ -109,6 +112,7 @@ end
 function Probe.wrote(jointName: string, className: string, value: CFrame)
 	writeCount += 1
 	lastWrites[jointName] = value
+	table.insert(writtenNames, jointName)
 	if writeCount == 1 then
 		sample = { jointName = jointName, className = className, value = value }
 	end
@@ -116,6 +120,7 @@ end
 
 function Probe.beginFrame()
 	writeCount = 0
+	table.clear(writtenNames)
 end
 
 function Probe.endFrame()
@@ -124,15 +129,19 @@ function Probe.endFrame()
 	end
 	linesLeft -= 1
 
-	local watched = sample
-	if watched == nil then
-		Log.info(SCOPE, "frame : 0 jointure écrite (aucune pose n'atteint de jointure)")
+	if writeCount == 0 then
+		Log.info(
+			SCOPE,
+			"frame : AUCUNE écriture (aucune pose active, ou aucune jointure atteinte)"
+		)
 		return
 	end
 
+	local watched = sample :: Sample
 	Log.info(
 		SCOPE,
-		`frame : {writeCount} écrite(s) · {watched.jointName} ({watched.className}) `
+		`frame : {writeCount} écrite(s) [{table.concat(writtenNames, ", ")}] · `
+			.. `témoin {watched.jointName} ({watched.className}) `
 			.. `écrit {string.format("%.1f", angleOf(watched.value))}° · `
 			.. `relu {if readBackAngle then string.format("%.1f°", readBackAngle) else "absent"} · `
 			.. `{if overwritten then "ÉCRASÉ" else "tenu"}`
@@ -140,20 +149,36 @@ function Probe.endFrame()
 end
 
 --[[
-	Résumé pour le panneau F2 : nombre d'écritures de la dernière frame, jointure
-	témoin, et si sa valeur a survécu à la frame précédente.
+	Résumé pour le panneau F2.
+
+	`writeCount` porte la frame COURANTE ; l'échantillon, lui, survit à une frame
+	sans écriture. Les afficher ensemble sans le dire — ce que faisait la première
+	version — laisse lire « on écrit ceci » là où il faut lire « on n'écrit plus
+	rien, voici la dernière écriture connue ». Les deux se ressemblent et ne se
+	corrigent pas au même endroit : la distinction est donc explicite.
 ]]
 function Probe.status(): (number, string, boolean)
 	local watched = sample
-	if watched == nil then
-		return writeCount, "aucune jointure atteinte", false
+	if writeCount == 0 then
+		if watched == nil then
+			return 0, "aucune écriture (aucune pose n'a jamais atteint de jointure)", true
+		end
+		return 0,
+			string.format(
+				"aucune écriture cette frame · dernière : %s %.0f°",
+				watched.jointName,
+				angleOf(watched.value)
+			),
+			true
 	end
+
+	local current = watched :: Sample
 	return writeCount,
 		string.format(
 			"%s (%s) %.0f° → relu %s",
-			watched.jointName,
-			watched.className,
-			angleOf(watched.value),
+			current.jointName,
+			current.className,
+			angleOf(current.value),
 			if readBackAngle then string.format("%.0f°", readBackAngle) else "absent"
 		),
 		overwritten

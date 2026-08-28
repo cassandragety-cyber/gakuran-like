@@ -42,6 +42,9 @@ CombatFeedbackController.Dependencies = {
 -- Signature de l'état joué : le nom seul ne suffit pas, deux coups successifs de
 -- la chaîne partagent l'état `Attacking` et doivent jouer des poses différentes.
 local lastSignature: string? = nil
+-- Dernière clé TENUE jouée. Retenue pour pouvoir l'arrêter : une pose bouclée ne
+-- s'arrête que si quelqu'un le lui demande.
+local lastKey: string? = nil
 -- `-inf` et non 0 : `monotonic` part de zéro au lancement du client, si bien
 -- qu'un 0 signifierait « en combat » pendant les quatre premières secondes de la
 -- partie, et la posture de combat s'afficherait au spawn.
@@ -51,14 +54,18 @@ local lastCombatAt = -math.huge
 	Clé d'animation correspondant à un état, ou nil quand l'état n'a rien à jouer
 	de lui-même.
 
-	`Blocking` est absent volontairement : la garde est pilotée par
-	`GuardController`, qui la monte à l'appui sans attendre que l'état reflété
-	confirme. Passer par ici lui coûterait la prédiction, donc la lisibilité de la
-	fenêtre de parade.
+	`Blocking` y figure désormais, et c'est un correctif de fond. La garde était
+	pilotée par `GuardController`, donc par les FRONTS clavier — ce qui contredisait
+	la règle énoncée juste au-dessus, et se payait cher : un front de relâchement
+	perdu ou parasite laissait la pose désynchronisée de l'état, sans rien pour la
+	rattraper. La prédiction n'y perd rien : `tryPredict` met à jour l'état reflété
+	dans la frame de l'appui, et cette boucle le lit à la frame suivante.
 ]]
 local function keyForState(name: string, chainIndex: number): string?
 	if name == "Attacking" then
 		return `M1_{chainIndex}`
+	elseif name == "Blocking" then
+		return "BlockHold"
 	elseif name == "Stunned" then
 		return "Stun"
 	elseif name == "Knocked" then
@@ -95,6 +102,18 @@ local function follow()
 	lastSignature = signature
 
 	local key = keyForState(state.name, state.chainIndex)
+
+	--[[
+		Arrêter la pose précédente est indispensable, et c'est ce qui manquait :
+		une pose TENUE — la garde, la posture de combat — ne se termine pas d'elle-
+		même. Quitter l'état qui la portait est le seul signal qui l'arrête. Sans
+		ça, la garde resterait à l'écran après un guard break.
+	]]
+	if lastKey ~= nil and lastKey ~= key then
+		AnimationController.stop(lastKey)
+	end
+	lastKey = key
+
 	if key then
 		--[[
 			`GuardBreak` décrit déjà l'étourdissement qui suit une rupture de garde,
@@ -105,6 +124,11 @@ local function follow()
 		]]
 		if key == "Stun" and AnimationController.isPlaying("GuardBreak") then
 			return
+		end
+		-- Montée rapide de la garde : `BlockStart` porte l'attaque courte (30 ms)
+		-- qui la rend lisible dans la fenêtre de parade, `BlockHold` la tient.
+		if key == "BlockHold" then
+			AnimationController.play("BlockStart")
 		end
 		AnimationController.play(key)
 		return
@@ -117,6 +141,7 @@ local function follow()
 	]]
 	if state.name == "Idle" and inCombat() then
 		AnimationController.play("CombatStance")
+		lastKey = "CombatStance"
 	else
 		AnimationController.stop("CombatStance")
 	end
