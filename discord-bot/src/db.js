@@ -58,6 +58,7 @@ function guildDefaults() {
     invites: {},
     joinedBy: {},
     leveling: { enabled: false, channel: null, rewards: {}, users: {} },
+    games: {},
   };
 }
 

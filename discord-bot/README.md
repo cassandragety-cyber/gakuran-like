@@ -5,6 +5,7 @@ Bot tout-en-un en français, **100 % commandes `/`** :
 - 🔨 **Modération** avec annonces stylées : chaque ban / kick / mute / warn / unban fait apparaître un **GIF animé** dans le salon (GIF anime façon *domain expansion*, Gojo, Sukuna… ou une carte animée générée avec l'avatar de la cible)
 - 🛡️ **Antiraid** sur 17 modules, qui annule l'action et punit son auteur (salons, rôles, webhooks, bots, bans/kicks en masse, @everyone, liens, spam, vagues d'arrivées…)
 - 🎵 **Musique** intégrée (YouTube, SoundCloud, liens Spotify, playlists) avec lecteur à boutons et filtres audio
+- 🎮 **Mini-jeux** : morpion, puissance 4, pierre-feuille-ciseaux (contre un membre ou le bot), pendu, démineur, snake, mémoire, rapido, nombre mystère, avec classements
 - 📜 Logs complets, 🎫 tickets, 🎉 giveaways, 👋 bienvenue avec carte image, 📨 suivi des invitations, 🏆 niveaux, 🔊 vocaux temporaires, 💾 sauvegardes du serveur
 - 🏗️ **`/setup-serveur`** : construit tout un serveur (rôles, catégories, salons, logs, tickets…) en une commande
 
@@ -73,6 +74,8 @@ Quand tu bannis, kick, mute, warn ou débannis quelqu'un, un embed apparaît dan
 **⚙️ Serveur** — `/setup-serveur` `/ticket setup|fermer|ajouter|retirer|renommer|claim` `/tempvoc setup|nom|limite|prive|public|invisible|visible|ajouter|retirer|expulser` `/giveaway lancer|terminer|reroll|participants` `/suggestion envoyer|salon` `/rolemenu` `/embed` `/say` `/autoreact` `/bienvenue arrivee|depart|autorole|test|voir` `/invites voir|classement|bonus|reset` `/vocal kick|deplacer|rassembler|vider` `/backup creer|liste|info|charger|supprimer` `/style couleur|gifs|gif-ajouter|gif-retirer|gif-liste|apercu`
 
 **🎵 Musique** — `/play <titre ou lien> [ensuite]` `/recherche` `/skip [jusqua]` `/stop` `/pause` `/nowplaying` `/queue` `/volume` `/loop` `/shuffle` `/remove` `/seek` `/filtre` (bassboost, nightcore, vaporwave, 8D, slowed + reverb…)
+
+**🎮 Jeux** — `/jeu morpion [adversaire]` `/jeu puissance4 [adversaire]` `/jeu pfc [adversaire]` (sans adversaire = contre le bot) `/jeu pendu` `/jeu rapido` `/jeu nombre [max]` (tout le salon joue) `/jeu demineur` `/jeu snake` `/jeu memoire` `/jeu classement <jeu>` `/jeu stats [membre]`
 
 **🏆 Niveaux** — `/level` `/classement [niveaux|invitations]` `/leveling on|off|salon|recompense|recompenses|xp|reset`
 

@@ -9,6 +9,7 @@ const CATS = {
   Serveur: ['⚙️', 'Setup, tickets, giveaways, bienvenue, backups…'],
   Musique: ['🎵', 'Lecteur musique'],
   Niveaux: ['🏆', 'XP et classements'],
+  Jeux: ['🎮', 'Morpion, puissance 4, pendu, démineur, snake…'],
   Utilitaire: ['🧰', 'Infos et outils'],
   Bot: ['🤖', 'Contrôle du bot (owners)'],
 };
